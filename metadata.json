@@ -1,0 +1,6 @@
+{
+  "name": "진주고 연수 취합 시스템",
+  "description": "진주고등학교 교직원 연수 이수증 취합 및 관리 웹앱입니다. 구글 시트 연동, PDF 자동 이수증 인식(Gemini API), 사용자별 이수 현황 및 이수증 직접 출력, 엑셀/PDF 다운로드 기능을 지원합니다.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
