@@ -170,6 +170,10 @@ export default function App() {
   // UI States
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [syncStatus, setSyncStatus] = useState<string>('');
+  const [isInitializingSheets, setIsInitializingSheets] = useState<boolean>(false);
+  const [initializeMessage, setInitializeMessage] = useState<string>('');
+  const [isPullingData, setIsPullingData] = useState<boolean>(false);
+  const [pullMessage, setPullMessage] = useState<string>('');
   
   // Topic creation States
   const [newTitle, setNewTitle] = useState('');
@@ -606,6 +610,132 @@ export default function App() {
       console.error(e);
       setSyncStatus('연동 오류가 발생했습니다. 실시간 연동을 활성화하려면 CORS 허용 설정을 확인하거나 아래 브라우저를 재로그인 해보세요.');
       setIsSyncing(false);
+    }
+  };
+
+  // Synchronize all local data to Google Sheet
+  const handleInitAndPushAllData = async () => {
+    if (!appsScriptUrl) {
+      showAlert('구글 Apps Script Web App URL을 먼저 연동해 주십시오.', 'error');
+      return;
+    }
+    
+    if (!confirm('⚠️ 본 기능은 현재 브라우저에 등록된 모든 교직원 명렬(70여명), 연수 목록(3개), 그리고 기존 제출 이력까지 본인의 구글 스프레드시트에 통째로 동기화(초기 데이터 생성)합니다. 진행하시겠습니까?')) {
+      return;
+    }
+
+    setIsInitializingSheets(true);
+    setInitializeMessage('1/3. 교직원 명렬(70여명)을 구글 스프레드시트에 업로드 중...');
+    
+    try {
+      // 1. Roster
+      await fetch(appsScriptUrl, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'saveRoster',
+          roster: roster
+        })
+      });
+      
+      // 2. Topics
+      setInitializeMessage('2/3. 연수 정보 개설 목록 및 전용 시트들을 생성 중...');
+      for (let i = 0; i < topics.length; i++) {
+        const topic = topics[i];
+        setInitializeMessage(`2/3. 연수 생성 중 (${i + 1}/${topics.length}) - ${topic.title}`);
+        await fetch(appsScriptUrl, {
+          method: 'POST',
+          mode: 'no-cors',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'createTopic',
+            topic: topic
+          })
+        });
+      }
+
+      // 3. Submissions
+      setInitializeMessage('3/3. 기존 샘플 제출 기록들을 시트에 매칭하여 전송 중...');
+      for (let i = 0; i < submissions.length; i++) {
+        const sub = submissions[i];
+        const topic = topics.find(t => t.id === sub.topicId);
+        const topicTitle = topic ? topic.title : '기타 연수';
+        setInitializeMessage(`3/3. 제출 이력 등록 중 (${i + 1}/${submissions.length}) - ${sub.name}`);
+        await fetch(appsScriptUrl, {
+          method: 'POST',
+          mode: 'no-cors',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'submitCertificate',
+            submission: sub,
+            topicTitle: topicTitle
+          })
+        });
+      }
+
+      setInitializeMessage('🎉 동기화 대성공! 교직원 명단 및 연수, 제출 기록까지 구글 시트에 완벽히 복원/생성되었습니다.');
+      showAlert('구글 시트 일괄 초기화 동기화에 성공했습니다!', 'success');
+      setTimeout(() => {
+        setIsInitializingSheets(false);
+        setInitializeMessage('');
+      }, 4000);
+    } catch (err: any) {
+      console.error(err);
+      showAlert(`동기화 중 오류가 발생했습니다: ${err.message}`, 'error');
+      setIsInitializingSheets(false);
+      setInitializeMessage('');
+    }
+  };
+
+  // Retrieve latest database from Google Spreadsheet
+  const handlePullAllData = async () => {
+    if (!appsScriptUrl) {
+      showAlert('구글 Apps Script Web App URL을 먼저 연동해 주십시오.', 'error');
+      return;
+    }
+    
+    if (!confirm('⚠️ 본 기능은 구글 스프레드시트의 최신 데이터를 가져와 현재 브라우저의 로컬 데이터를 완전히 덮어씁니다. (스프레드시트에서 직접 한글 이름이나 부서, 연수를 수정했을 때 유용합니다) 수정사항을 덮어쓰시겠습니까?')) {
+      return;
+    }
+
+    setIsPullingData(true);
+    setPullMessage('1/3. 구글 시트로부터 교직원 명렬을 다운로드하는 중...');
+    
+    try {
+      // Fetch Roster
+      const rosterRes = await fetch(`${appsScriptUrl}?action=getRoster`);
+      const rosterJson = await rosterRes.json();
+      
+      setPullMessage('2/3. 구글 시트로부터 연수 목록을 다운로드하는 중...');
+      const topicsRes = await fetch(`${appsScriptUrl}?action=getTopics`);
+      const topicsJson = await topicsRes.json();
+
+      setPullMessage('3/3. 구글 시트로부터 전체 제출 현황을 다운로드하는 중...');
+      const subsRes = await fetch(`${appsScriptUrl}?action=getSubmissions`);
+      const subsJson = await subsRes.json();
+
+      if (rosterJson.success && rosterJson.data && rosterJson.data.length > 0) {
+        setRoster(rosterJson.data);
+      }
+      if (topicsJson.success && topicsJson.data && topicsJson.data.length > 0) {
+        setTopics(topicsJson.data);
+      }
+      if (subsJson.success && subsJson.data) {
+        setSubmissions(subsJson.data);
+      }
+
+      setPullMessage('🎉 다운로드 완료! 구글 시트의 최신 교직원 데이터와 100% 동기화되었습니다.');
+      showAlert('구글 시트의 최신 데이터를 성공적으로 동기화했습니다!', 'success');
+      setTimeout(() => {
+        setIsPullingData(false);
+        setPullMessage('');
+      }, 3000);
+    } catch (err: any) {
+      console.error(err);
+      showAlert(`데이터를 불러오는 중 오류가 발생했습니다. 구글 앱스 스크립트 배포 시 '액세스 권한이 있는 사용자'를 '모든 사람(Anyone)'으로 설정했는지 다시 한 번 확인해 주세요. 오류: ${err.message}`, 'error');
+      setIsPullingData(false);
+      setPullMessage('');
     }
   };
 
@@ -3162,7 +3292,101 @@ export default function App() {
 
           {/* Apps Script Guide tab */}
           {activeTab === 'setup-guide' && (
-            <AppsScriptGuide />
+            <div className="space-y-6">
+              {/* Sync Center Console */}
+              <div className="bg-white rounded-2xl border border-slate-200/80 p-6 shadow-xs space-y-5">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl">
+                    <Database className="w-5 h-5 text-indigo-600" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-slate-800 text-base leading-snug">📊 구글 스프레드시트 통합 동기화 센터</h3>
+                    <p className="text-xs text-slate-400">구글 웹앱 연동 후 데이터를 업로드하거나 최신 시트의 수정사항을 내려받으세요.</p>
+                  </div>
+                </div>
+
+                {!appsScriptUrl ? (
+                  <div className="bg-amber-50 border border-amber-100 rounded-xl p-4 flex gap-3.5 items-start">
+                    <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                    <div className="space-y-1">
+                      <span className="text-xs font-bold text-amber-800 block">⚠️ 연동 전 로컬 데모 상태</span>
+                      <p className="text-xs text-amber-700/95 leading-relaxed font-medium">
+                        상점 헤더의 <strong className="text-amber-900">'로컬 기기 저장 모드'</strong> 버튼을 클릭하여 스프레드시트 API 주소(Web App URL)를 연동해주십시오.
+                        연동된 주소가 등록되면 구글 드라이브 원격 서버로 모든 데이터를 실시간 기록하거나 기초 더미 데이터를 즉시 밀어넣을 수 있습니다!
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* Send to Sheet Card */}
+                    <div className="border border-slate-150 rounded-xl p-4.5 bg-slate-50/40 flex flex-col justify-between gap-4">
+                      <div className="space-y-2">
+                        <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                          <Upload className="w-4 h-4 text-indigo-600" />
+                          <span>구글 시트로 로컬 전체 데이터 업로드</span>
+                        </span>
+                        <p className="text-[11px] text-slate-400 leading-normal">
+                          브라우저에 로드된 기본 교직원 명렬(70여명)과 기본 개설 연수(3개), 기존 샘플 제출 기록 전체를 본인의 새 구글 시트 데이터베이스로 자동 전송합니다. 
+                          <strong>최초 연동 후 스프레드시트에 테스트 데이터를 가득 채우고 싶을 때 꼭 사용하세요!</strong>
+                        </p>
+                      </div>
+
+                      <div className="space-y-3 pt-2">
+                        {isInitializingSheets && (
+                          <div className="p-2.5 bg-indigo-50 border border-indigo-100 rounded-lg text-[11px] text-indigo-700 flex items-center gap-2 font-medium animate-pulse">
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin text-indigo-600 shrink-0" />
+                            <span className="leading-snug">{initializeMessage}</span>
+                          </div>
+                        )}
+                        <button
+                          type="button"
+                          onClick={handleInitAndPushAllData}
+                          disabled={isInitializingSheets}
+                          className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 text-white font-bold rounded-xl text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
+                        >
+                          <Upload className="w-3.5 h-3.5" />
+                          <span>구글 시트에 전체 데이터 생성하기 (초기 세팅용)</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Pull from Sheet Card */}
+                    <div className="border border-slate-150 rounded-xl p-4.5 bg-slate-50/40 flex flex-col justify-between gap-4">
+                      <div className="space-y-2">
+                        <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                          <RefreshCw className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>구글 시트에서 최신 데이터 가져오기 (내려받기)</span>
+                        </span>
+                        <p className="text-[11px] text-slate-400 leading-normal">
+                          구글 스프레드시트 원본을 직접 열어서 한글 이름을 수정하거나 부서/직종을 추가하셨나요? 
+                          스프레드시트에 실시간 누적된 교직원 명단 및 최종 제출 현황을 내려받아 프론트엔드와 완벽 동기화합니다.
+                        </p>
+                      </div>
+
+                      <div className="space-y-3 pt-2">
+                        {isPullingData && (
+                          <div className="p-2.5 bg-emerald-50 border border-emerald-100 rounded-lg text-[11px] text-emerald-700 flex items-center gap-2 font-medium animate-pulse">
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin text-emerald-600 shrink-0" />
+                            <span className="leading-snug">{pullMessage}</span>
+                          </div>
+                        )}
+                        <button
+                          type="button"
+                          onClick={handlePullAllData}
+                          disabled={isPullingData}
+                          className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-300 text-white font-bold rounded-xl text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
+                        >
+                          <RefreshCw className="w-3.5 h-3.5" />
+                          <span>구글 시트로부터 최신 정보 동기화 (다운로드)</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <AppsScriptGuide />
+            </div>
           )}
 
         </main>
