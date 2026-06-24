@@ -25,6 +25,15 @@ export default function AppsScriptGuide() {
  *          -> 속성명(Key)에 "GEMINI_API_KEY", 값(Value)에 AI Studio에서 발급받은 API 키를 입력하고 저장해 주시면 연동이 완료됩니다!
  */
 
+// [!] 최초 실행 승인 전용 테스트 함수
+// Apps Script 편집기 상단에서 'testAuthorize'를 선택하고 '▶ 실행'을 누르면 에러 없이 안전하게 권한 승인이 완료됩니다!
+function testAuthorize() {
+  // 구글 시트 및 외부 API(Gemini) 호출 권한 승인을 강제로 유도하기 위해 두 서비스를 명시합니다.
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var dummyFetch = UrlFetchApp.getRequest("https://generativelanguage.googleapis.com/");
+  Logger.log("구글 스프레드시트 및 외부 연동 권한 승인이 성공적으로 완료되었습니다!");
+}
+
 function doGet(e) {
   var action = e.parameter.action;
   var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -375,6 +384,29 @@ function setupSheets(ss) {
               완료 화면에 표시되는 <strong>웹 앱 URL 주소</strong>를 복사한 뒤, 이 웹앱 최상단 혹은 설정의 <strong className="bg-slate-100 px-1 border rounded text-xs">구글 앱스 스크립트 Web App URL</strong> 입력란에 붙여 넣으시면 실시간 동기화 데이터베이스로 즉시 전환됩니다!
             </li>
           </ol>
+        </div>
+
+        {/* 중요 문제 해결 가이드 */}
+        <div className="mt-6 border-t border-rose-100 bg-rose-50/50 rounded-lg p-4 pt-4">
+          <h4 className="font-bold text-rose-800 text-sm flex items-center gap-1.5 mb-2">
+            ⚠️ "TypeError: Cannot read properties of undefined (reading 'parameter')" 에러 해결법
+          </h4>
+          <p className="text-xs text-rose-700 leading-relaxed mb-3">
+            구글 Apps Script 편집기에서 <strong>doGet</strong> 또는 <strong>doPost</strong> 함수를 선택하고 실행하면, 실제 브라우저가 보낸 정보(parameter)가 없어 이 에러가 발생하는 것이 <strong>정상</strong>입니다. <br />
+            하지만 에러와 상관없이 중간에 <strong>"권한 검토"</strong>를 거쳐 <strong className="font-bold">허용(Allow)</strong>을 완료하셨다면 <strong>권한 승인은 이미 완벽하게 완료된 상태</strong>입니다!
+          </p>
+          <div className="bg-white/80 rounded border border-rose-100 p-3 space-y-2 text-xs text-rose-950 leading-relaxed">
+            <p className="font-bold text-rose-900"><strong>💡 에러 없이 깔끔하게 권한 승인 완료하기 (추천)</strong></p>
+            <ol className="list-decimal list-inside space-y-1.5 ml-1">
+              <li>코드를 복사하여 새로 붙여넣으셨다면, 상단 함수 선택 드롭다운에서 <strong className="text-indigo-600 bg-indigo-50 px-1 py-0.5 rounded">testAuthorize</strong> 함수를 선택합니다.</li>
+              <li>바로 왼쪽의 <strong className="text-indigo-600 font-bold">▶ 실행 (Run)</strong> 버튼을 클릭합니다.</li>
+              <li>중간에 <strong>"권한 검토"</strong> 팝업이 뜨면 클릭한 뒤, 본인의 구글 계정을 선택합니다.</li>
+              <li>"Google에서 이 앱을 검증하지 않았습니다" 경고창이 나타나면 좌측 하단의 <strong className="underline font-bold cursor-pointer">고급 (Advanced)</strong>을 클릭합니다.</li>
+              <li>아래에 작게 표시되는 <strong className="underline text-indigo-600 font-bold cursor-pointer">진주고 연수 취합 API(으)로 이동(안전하지 않음)</strong>을 클릭한 후, <strong className="font-bold">허용 (Allow)</strong>을 클릭합니다.</li>
+              <li>실행 로그에 "성공적으로 완료되었습니다!"가 뜨면 승인 완료입니다.</li>
+              <li><strong>[마지막 필수 단계]</strong> 승인 후에는 항상 상단 메뉴의 <strong className="font-bold">배포 &gt; 배포 관리</strong>로 들어가 연필 아이콘(편집)을 누르고, 버전을 <strong className="text-indigo-600 font-bold">새 버전(New Version)</strong>으로 바꾼 뒤 <strong className="font-bold bg-indigo-600 text-white px-1.5 py-0.5 rounded text-[10px]">배포</strong> 버튼을 눌러 업데이트 해주어야 적용됩니다!</li>
+            </ol>
+          </div>
         </div>
       </div>
 

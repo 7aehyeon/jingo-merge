@@ -21,6 +21,7 @@ export interface TrainingTopic {
   createdAt: string;
   targets?: string[]; // list of roster IDs targeted for this training
   linkStatutorySubmissions?: boolean; // Whether to pull submissions from the statutory package
+  creator?: string; // 담당자명
 }
 
 export interface Submission {

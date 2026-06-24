@@ -126,7 +126,7 @@ const INITIAL_SUBMISSIONS: Submission[] = [
 // [초중요 - 배포 설정] 깃허브(GitHub Pages)에 정적 페이지로 배포 시, 모든 사용자의 브라우저에서 자동 연동이 되도록 
 // 본인의 구글 Apps Script 웹앱 URL(https://script.google.com/macros/s/.../exec) 주소를 아래 빈칸에 직접 붙여넣고 저장하세요.
 // 여기에 URL을 적어두면, 사용자가 사이트에 처음 접속할 때 따로 라이브러리 설정을 누르고 연동할 필요 없이 모든 데이터가 이 구글 시트로 들어가게 됩니다!
-const DEFAULT_APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxcKS_dq4mp1GIcj4LWDpCqfk4mTcz2v7oCiU0RAw1hbdfEDsY6OTlQiQpwCkcAm53W/exec";
+const DEFAULT_APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbz40gFJCuTsmycMKh55Xwpf5PlxIhVmIc-Bc7td21nXI4VhBmqALlmYkMPviW0d9I3R/exec";
 
 // 브라우저 쿠키/저장소 차단(시크릿 모드/아이프레임 제한 등) 발생 시 크래시 방지를 위한 안전한 로컬스토리지 래퍼
 const inMemoryStorage: Record<string, string> = {};
@@ -219,7 +219,11 @@ export default function App() {
   });
 
   // UI States
-  const [isInitialLoading, setIsInitialLoading] = useState<boolean>(false);
+  const [isInitialLoading, setIsInitialLoading] = useState<boolean>(() => {
+    // 앱스 스크립트 주소가 기본 설정되어 있다면 최초 구글 시트에서 데이터를 당겨오기 전까지 
+    // 더미 데이터 노출을 원천 방지하기 위해 전체 화면 로딩을 활성화합니다.
+    return !!DEFAULT_APPS_SCRIPT_URL;
+  });
   const [isSyncFailed, setIsSyncFailed] = useState<boolean>(false);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [syncStatus, setSyncStatus] = useState<string>('');
@@ -232,6 +236,7 @@ export default function App() {
   const [newTitle, setNewTitle] = useState('');
   const [newContent, setNewContent] = useState('');
   const [newDeadline, setNewDeadline] = useState('2026-07-31');
+  const [newCreator, setNewCreator] = useState('');
   const [creationMessage, setCreationMessage] = useState('');
   const [selectedTargetIds, setSelectedTargetIds] = useState<string[]>([]);
   const [linkStatutorySubmissions, setLinkStatutorySubmissions] = useState<boolean>(false);
@@ -240,6 +245,8 @@ export default function App() {
   const [newMemberName, setNewMemberName] = useState('');
   const [newMemberType, setNewMemberType] = useState<EmployeeType>('교원');
   const [newMemberDept, setNewMemberDept] = useState('');
+  const [isCustomType, setIsCustomType] = useState<boolean>(false);
+  const [customTypeName, setCustomTypeName] = useState<string>('');
 
   // CSV Preview & Upload States
   const [csvPreview, setCsvPreview] = useState<{ name: string; type: EmployeeType; department?: string }[]>([]);
@@ -266,6 +273,8 @@ export default function App() {
     }
     return deadlineStr;
   };
+
+  const formatDate = formatDeadline;
   
   // Sorting states for dashboard live table
   const [sortKey, setSortKey] = useState<'name' | 'department' | 'type' | 'status' | null>(null);
@@ -537,12 +546,12 @@ export default function App() {
   // 최초 접속 및 구글 시트 데이터 실시간 자동 동기화 훅
   useEffect(() => {
     const initSync = async () => {
-      if (!appsScriptUrl) return;
-      
-      const hasLocalCache = safeLocalStorage.getItem('jj_roster') !== null;
-      if (!hasLocalCache) {
-        setIsInitialLoading(true);
+      if (!appsScriptUrl) {
+        setIsInitialLoading(false);
+        return;
       }
+      
+      setIsInitialLoading(true);
       
       const success = await pullDataFromGoogleSheets(true);
       if (!success) {
@@ -881,12 +890,14 @@ export default function App() {
       createdAt: new Date().toISOString().substring(0, 10),
       targets: selectedTargetIds.length > 0 ? selectedTargetIds : roster.map(r => r.id),
       linkStatutorySubmissions: linkStatutorySubmissions,
+      creator: newCreator.trim() || undefined,
     };
 
     const updatedTopics = [...topics, newTopic];
     setTopics(updatedTopics);
     setNewTitle('');
     setNewContent('');
+    setNewCreator('');
     setLinkStatutorySubmissions(false); // Reset checkbox state
     setCreationMessage(`🎉 신규 연수 '${newTopic.title}'이 성공적으로 목록에 추가되었습니다.`);
     
@@ -924,16 +935,24 @@ export default function App() {
       return;
     }
 
+    const finalType = isCustomType ? customTypeName.trim() : newMemberType;
+    if (!finalType) {
+      showAlert('직종 구분을 선택하거나 입력해 주세요.', 'error');
+      return;
+    }
+
     const newItem: RosterItem = {
       id: 'member-' + Date.now(),
       name: newMemberName.trim(),
-      type: newMemberType,
-      department: newMemberDept.trim() || '일반'
+      type: finalType,
+      department: newMemberDept.trim() || undefined
     };
 
     setRoster([...roster, newItem]);
     setNewMemberName('');
     setNewMemberDept('');
+    setIsCustomType(false);
+    setCustomTypeName('');
     
     if (appsScriptUrl) {
       syncWithGoogleSheet();
@@ -1572,6 +1591,7 @@ export default function App() {
   const teachers = roster.filter(r => r.type === '교원');
   const unionWorkers = roster.filter(r => r.type === '교육공무직');
   const generals = roster.filter(r => r.type === '일반직');
+  const othersCount = roster.length - teachers.length - unionWorkers.length - generals.length;
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col font-sans" id="app-root-pane">
@@ -1747,7 +1767,7 @@ export default function App() {
               </div>
               <div>
                 <h3 className="text-sm font-bold text-slate-900">진주고등학교</h3>
-                <p className="text-[10px] text-indigo-600 font-bold uppercase tracking-widest">연수 이수 자동화</p>
+                <p className="text-[10px] text-indigo-600 font-bold uppercase tracking-widest">연수 취합 시스템</p>
               </div>
             </div>
 
@@ -1833,6 +1853,12 @@ export default function App() {
                 <span className="text-xs text-slate-600">일반직</span>
                 <span className="text-xs font-bold text-slate-800">{generals.length}명</span>
               </div>
+              {othersCount > 0 && (
+                <div className="flex gap-2 items-center justify-between mt-1">
+                  <span className="text-xs text-slate-600">기타 직종</span>
+                  <span className="text-xs font-bold text-slate-800">{othersCount}명</span>
+                </div>
+              )}
             </div>
 
             {appsScriptUrl ? (
@@ -2177,6 +2203,17 @@ export default function App() {
                       </div>
                     </div>
 
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-500 mb-1">담당 부서 및 담당자명</label>
+                      <input
+                        type="text"
+                        placeholder="예: 교육정보부 박교사 (선택)"
+                        value={newCreator}
+                        onChange={(e) => setNewCreator(e.target.value)}
+                        className="w-full text-xs px-3.5 py-2.5 border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-600 bg-white"
+                      />
+                    </div>
+
                     <div className="bg-indigo-50/20 border border-indigo-100/60 p-4 rounded-2xl space-y-1.5 transition-all">
                       <label className="flex items-start gap-2.5 cursor-pointer">
                         <input
@@ -2359,7 +2396,10 @@ export default function App() {
                               <Calendar className="w-3 h-3 text-indigo-500" />
                               <span>기한: <strong className="text-slate-700">{formatDeadline(topic.deadline)}</strong></span>
                             </span>
-                            <span>등록일: {topic.createdAt}</span>
+                            {topic.creator && (
+                              <span className="text-slate-500 font-medium">담당: <strong className="text-slate-700">{topic.creator}</strong></span>
+                            )}
+                            <span>등록일: {formatDate(topic.createdAt)}</span>
                             <div className="flex gap-2 items-center">
                               <span className="bg-indigo-100/80 text-indigo-700 font-bold px-2 py-0.5 rounded-full text-[10px]">
                                 {counts}명 완료
@@ -2500,21 +2540,40 @@ export default function App() {
                     <div>
                       <label className="block text-xs font-semibold text-slate-500 mb-1">직종 구분</label>
                       <select
-                        value={newMemberType}
-                        onChange={(e) => setNewMemberType(e.target.value as EmployeeType)}
+                        value={isCustomType ? 'custom' : newMemberType}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (val === 'custom') {
+                            setIsCustomType(true);
+                          } else {
+                            setIsCustomType(false);
+                            setNewMemberType(val as EmployeeType);
+                          }
+                        }}
                         className="w-full text-xs px-3.5 py-2.5 border border-slate-200 rounded-xl focus:outline-none bg-white font-medium"
                       >
-                        <option value="교원">교원 (교장/교감/교사)</option>
-                        <option value="교육공무직">교육공무직 (행정실무사/급식실/보조)</option>
-                        <option value="일반직">일반직 (행정실장/행정서기 등)</option>
+                        <option value="교원">교원</option>
+                        <option value="일반직">일반직</option>
+                        <option value="교육공무직">교육공무직</option>
+                        <option value="custom">직접 입력 (새 직종 추가...)</option>
                       </select>
+                      {isCustomType && (
+                        <input
+                          type="text"
+                          placeholder="새 직종명을 입력하세요. (예: 계약직, 외부강사 등)"
+                          value={customTypeName}
+                          onChange={(e) => setCustomTypeName(e.target.value)}
+                          className="mt-2 w-full text-xs px-3.5 py-2.5 border border-indigo-200 rounded-xl focus:outline-none focus:border-indigo-600 bg-white"
+                          required
+                        />
+                      )}
                     </div>
 
                     <div>
-                      <label className="block text-xs font-semibold text-slate-500 mb-1">소속 부서 / 학년계 등</label>
+                      <label className="block text-xs font-semibold text-slate-500 mb-1">소속 부서</label>
                       <input
                         type="text"
-                        placeholder="예: 3학년부, 행정실, 보건실 등 (선택)"
+                        placeholder="예: 행정실, 급식실, 1학년부 등 (선택)"
                         value={newMemberDept}
                         onChange={(e) => setNewMemberDept(e.target.value)}
                         className="w-full text-xs px-3.5 py-2.5 border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-600 bg-white"
@@ -2567,6 +2626,12 @@ export default function App() {
                       <span>공무직 {unionWorkers.length}</span>
                       <span>•</span>
                       <span>일반직 {generals.length}</span>
+                      {othersCount > 0 && (
+                        <>
+                          <span>•</span>
+                          <span>기타 {othersCount}</span>
+                        </>
+                      )}
                     </div>
                   </div>
 
@@ -2588,10 +2653,12 @@ export default function App() {
                             <td className="p-3">
                               <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
                                 r.type === '교원'
-                                  ? 'bg-blue-50 text-blue-700'
+                                  ? 'bg-blue-50 text-blue-700 border border-blue-100/40'
                                   : r.type === '교육공무직'
-                                  ? 'bg-purple-50 text-purple-700'
-                                  : 'bg-emerald-50 text-emerald-700'
+                                  ? 'bg-purple-50 text-purple-700 border border-purple-100/40'
+                                  : r.type === '일반직'
+                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-100/40'
+                                  : 'bg-slate-100 text-slate-700 border border-slate-200/40'
                               }`}>
                                 {r.type}
                               </span>
@@ -3407,6 +3474,9 @@ export default function App() {
                             </span>
                           </div>
                           <p className="text-[11px] text-slate-400 line-clamp-1 leading-normal">{topic.content}</p>
+                          {topic.creator && (
+                            <p className="text-[10px] text-indigo-500 font-semibold">담당: {topic.creator}</p>
+                          )}
                         </div>
 
                         <div className="space-y-2">
