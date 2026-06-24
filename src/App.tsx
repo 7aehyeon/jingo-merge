@@ -128,6 +128,35 @@ const INITIAL_SUBMISSIONS: Submission[] = [
 // 여기에 URL을 적어두면, 사용자가 사이트에 처음 접속할 때 따로 라이브러리 설정을 누르고 연동할 필요 없이 모든 데이터가 이 구글 시트로 들어가게 됩니다!
 const DEFAULT_APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxcKS_dq4mp1GIcj4LWDpCqfk4mTcz2v7oCiU0RAw1hbdfEDsY6OTlQiQpwCkcAm53W/exec";
 
+// 브라우저 쿠키/저장소 차단(시크릿 모드/아이프레임 제한 등) 발생 시 크래시 방지를 위한 안전한 로컬스토리지 래퍼
+const inMemoryStorage: Record<string, string> = {};
+const safeLocalStorage = {
+  getItem: (key: string): string | null => {
+    try {
+      return localStorage.getItem(key);
+    } catch (e) {
+      console.warn(`Storage getItem blocked for key "${key}":`, e);
+      return inMemoryStorage[key] || null;
+    }
+  },
+  setItem: (key: string, value: string): void => {
+    try {
+      localStorage.setItem(key, value);
+    } catch (e) {
+      console.warn(`Storage setItem blocked for key "${key}":`, e);
+      inMemoryStorage[key] = value;
+    }
+  },
+  removeItem: (key: string): void => {
+    try {
+      localStorage.removeItem(key);
+    } catch (e) {
+      console.warn(`Storage removeItem blocked for key "${key}":`, e);
+      delete inMemoryStorage[key];
+    }
+  }
+};
+
 export default function App() {
   // State elements
   const [isAdmin, setIsAdmin] = useState<boolean>(false);
@@ -135,12 +164,12 @@ export default function App() {
   
   // Roster, Topics, Submissions management (persists locally & connects to Google Sheets)
   const [roster, setRoster] = useState<RosterItem[]>(() => {
-    const saved = localStorage.getItem('jj_roster');
+    const saved = safeLocalStorage.getItem('jj_roster');
     return saved ? JSON.parse(saved) : INITIAL_ROSTER;
   });
   
   const [topics, setTopics] = useState<TrainingTopic[]>(() => {
-    const saved = localStorage.getItem('jj_topics');
+    const saved = safeLocalStorage.getItem('jj_topics');
     let loaded = saved ? JSON.parse(saved) : INITIAL_TOPICS;
     if (!loaded.some((t: any) => t.id === 'topic-statutory-combined')) {
       loaded = [
@@ -159,20 +188,20 @@ export default function App() {
   });
 
   const [submissions, setSubmissions] = useState<Submission[]>(() => {
-    const saved = localStorage.getItem('jj_submissions');
+    const saved = safeLocalStorage.getItem('jj_submissions');
     return saved ? JSON.parse(saved) : INITIAL_SUBMISSIONS;
   });
 
   const [appsScriptUrl, setAppsScriptUrl] = useState<string>(() => {
     // 만약 소스코드 내 DEFAULT_APPS_SCRIPT_URL이 변경되었다면, 이전 로컬스토리지의 구버전 주소를 덮어씌웁니다.
-    const lastDefault = localStorage.getItem('jj_last_default_url');
+    const lastDefault = safeLocalStorage.getItem('jj_last_default_url');
     if (lastDefault !== DEFAULT_APPS_SCRIPT_URL) {
-      localStorage.setItem('jj_apps_script_url', DEFAULT_APPS_SCRIPT_URL);
-      localStorage.setItem('jj_last_default_url', DEFAULT_APPS_SCRIPT_URL);
+      safeLocalStorage.setItem('jj_apps_script_url', DEFAULT_APPS_SCRIPT_URL);
+      safeLocalStorage.setItem('jj_last_default_url', DEFAULT_APPS_SCRIPT_URL);
       return DEFAULT_APPS_SCRIPT_URL;
     }
 
-    let saved = localStorage.getItem('jj_apps_script_url');
+    let saved = safeLocalStorage.getItem('jj_apps_script_url');
     if (saved) {
       saved = saved.trim();
       // Fix copy-paste prefixes like "script.googlehttps://"
@@ -191,6 +220,7 @@ export default function App() {
 
   // UI States
   const [isInitialLoading, setIsInitialLoading] = useState<boolean>(false);
+  const [isSyncFailed, setIsSyncFailed] = useState<boolean>(false);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [syncStatus, setSyncStatus] = useState<string>('');
   const [isInitializingSheets, setIsInitializingSheets] = useState<boolean>(false);
@@ -479,17 +509,17 @@ export default function App() {
   const [verifiedUserInfo, setVerifiedUserInfo] = useState<RosterItem | null>(null);
   const [userLookedUp, setUserLookedUp] = useState(false);
 
-  // Auto save to localStorage when updated
+  // Auto save to safeLocalStorage when updated
   useEffect(() => {
-    localStorage.setItem('jj_roster', JSON.stringify(roster));
+    safeLocalStorage.setItem('jj_roster', JSON.stringify(roster));
   }, [roster]);
 
   useEffect(() => {
-    localStorage.setItem('jj_topics', JSON.stringify(topics));
+    safeLocalStorage.setItem('jj_topics', JSON.stringify(topics));
   }, [topics]);
 
   useEffect(() => {
-    localStorage.setItem('jj_submissions', JSON.stringify(submissions));
+    safeLocalStorage.setItem('jj_submissions', JSON.stringify(submissions));
   }, [submissions]);
 
   useEffect(() => {
@@ -501,7 +531,7 @@ export default function App() {
       cleaned = cleaned.substring(cleaned.indexOf('http://'));
       setAppsScriptUrl(cleaned);
     }
-    localStorage.setItem('jj_apps_script_url', cleaned);
+    safeLocalStorage.setItem('jj_apps_script_url', cleaned);
   }, [appsScriptUrl]);
 
   // 최초 접속 및 구글 시트 데이터 실시간 자동 동기화 훅
@@ -509,12 +539,17 @@ export default function App() {
     const initSync = async () => {
       if (!appsScriptUrl) return;
       
-      const hasLocalCache = localStorage.getItem('jj_roster') !== null;
+      const hasLocalCache = safeLocalStorage.getItem('jj_roster') !== null;
       if (!hasLocalCache) {
         setIsInitialLoading(true);
       }
       
-      await pullDataFromGoogleSheets(true);
+      const success = await pullDataFromGoogleSheets(true);
+      if (!success) {
+        setIsSyncFailed(true);
+      } else {
+        setIsSyncFailed(false);
+      }
       setIsInitialLoading(false);
     };
     
@@ -759,37 +794,38 @@ export default function App() {
 
     if (!silent) {
       setIsPullingData(true);
-      setPullMessage('1/3. 구글 시트로부터 교직원 명렬을 다운로드하는 중...');
+      setPullMessage('구글 시트로부터 실시간 데이터베이스를 통합 동기화하는 중...');
     }
 
     try {
-      // Fetch Roster
-      const rosterRes = await fetch(`${appsScriptUrl}?action=getRoster`);
-      const rosterJson = await rosterRes.json();
-      
-      if (!silent) setPullMessage('2/3. 구글 시트로부터 연수 목록을 다운로드하는 중...');
-      const topicsRes = await fetch(`${appsScriptUrl}?action=getTopics`);
-      const topicsJson = await topicsRes.json();
+      // 병렬 비동기 호출(Promise.all)을 통한 획기적인 로딩 속도 향상
+      const [rosterRes, topicsRes, subsRes] = await Promise.all([
+        fetch(`${appsScriptUrl}?action=getRoster`),
+        fetch(`${appsScriptUrl}?action=getTopics`),
+        fetch(`${appsScriptUrl}?action=getSubmissions`)
+      ]);
 
-      if (!silent) setPullMessage('3/3. 구글 시트로부터 전체 제출 현황을 다운로드하는 중...');
-      const subsRes = await fetch(`${appsScriptUrl}?action=getSubmissions`);
-      const subsJson = await subsRes.json();
+      const [rosterJson, topicsJson, subsJson] = await Promise.all([
+        rosterRes.json(),
+        topicsRes.json(),
+        subsRes.json()
+      ]);
 
       let updated = false;
 
       if (rosterJson.success && rosterJson.data && rosterJson.data.length > 0) {
         setRoster(rosterJson.data);
-        localStorage.setItem('jj_roster', JSON.stringify(rosterJson.data));
+        safeLocalStorage.setItem('jj_roster', JSON.stringify(rosterJson.data));
         updated = true;
       }
       if (topicsJson.success && topicsJson.data && topicsJson.data.length > 0) {
         setTopics(topicsJson.data);
-        localStorage.setItem('jj_topics', JSON.stringify(topicsJson.data));
+        safeLocalStorage.setItem('jj_topics', JSON.stringify(topicsJson.data));
         updated = true;
       }
       if (subsJson.success && subsJson.data) {
         setSubmissions(subsJson.data);
-        localStorage.setItem('jj_submissions', JSON.stringify(subsJson.data));
+        safeLocalStorage.setItem('jj_submissions', JSON.stringify(subsJson.data));
         updated = true;
       }
 
@@ -1799,24 +1835,32 @@ export default function App() {
               </div>
             </div>
 
-            {isAdmin && (
-              appsScriptUrl ? (
-                <div className="bg-emerald-50/50 text-emerald-700 p-2.5 rounded-lg border border-emerald-100/80 text-[11px] flex gap-2 items-start">
-                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 mt-1 shrink-0 animate-pulse"></div>
+            {appsScriptUrl ? (
+              isSyncFailed ? (
+                <div className="bg-rose-50/80 text-rose-700 p-2.5 rounded-lg border border-rose-100 text-[11px] flex gap-2 items-start">
+                  <div className="w-1.5 h-1.5 rounded-full bg-rose-500 mt-1 shrink-0 animate-pulse"></div>
                   <div className="leading-tight">
-                    <span className="font-bold block">스프레드시트 연동</span>
-                    실시간 자동 등록이 완벽 가동 중입니다.
+                    <span className="font-bold block text-rose-800">🔴 스프레드시트 연동 실패</span>
+                    앱스 스크립트 배포 오류 또는 인터넷 지연으로 데이터를 로드할 수 없습니다. (로컬 임시 모드로 가동 중)
                   </div>
                 </div>
               ) : (
-                <div className="bg-amber-50/50 text-amber-700 p-2.5 rounded-lg border border-amber-100/80 text-[11px] flex gap-2 items-start">
-                  <div className="w-1.5 h-1.5 rounded-full bg-amber-400 mt-1 shrink-0"></div>
-                  <div className="leading-tight animate-pulse">
-                    <span className="font-bold block">로컬 기기 저장 모드</span>
-                    데이터가 브라우저에 임시 저장됩니다.
+                <div className="bg-emerald-50/60 text-emerald-700 p-2.5 rounded-lg border border-emerald-100 text-[11px] flex gap-2 items-start">
+                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 mt-1 shrink-0 animate-pulse"></div>
+                  <div className="leading-tight">
+                    <span className="font-bold block text-emerald-800">🟢 스프레드시트 실시간 연동</span>
+                    구글 드라이브 중앙 DB와 실시간 동기화 상태가 완벽히 적용되었습니다.
                   </div>
                 </div>
               )
+            ) : (
+              <div className="bg-amber-50/60 text-amber-700 p-2.5 rounded-lg border border-amber-100 text-[11px] flex gap-2 items-start">
+                <div className="w-1.5 h-1.5 rounded-full bg-amber-400 mt-1 shrink-0"></div>
+                <div className="leading-tight animate-pulse">
+                  <span className="font-bold block text-amber-800">⚠️ 로컬 데모 모드 (연동 안 됨)</span>
+                  스프레드시트가 비활성화되어 데이터가 브라우저에만 임시 저장됩니다.
+                </div>
+              </div>
             )}
           </div>
         </aside>
