@@ -126,7 +126,7 @@ const INITIAL_SUBMISSIONS: Submission[] = [
 // [초중요 - 배포 설정] 깃허브(GitHub Pages)에 정적 페이지로 배포 시, 모든 사용자의 브라우저에서 자동 연동이 되도록 
 // 본인의 구글 Apps Script 웹앱 URL(https://script.google.com/macros/s/.../exec) 주소를 아래 빈칸에 직접 붙여넣고 저장하세요.
 // 여기에 URL을 적어두면, 사용자가 사이트에 처음 접속할 때 따로 라이브러리 설정을 누르고 연동할 필요 없이 모든 데이터가 이 구글 시트로 들어가게 됩니다!
-const DEFAULT_APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbz40gFJCuTsmycMKh55Xwpf5PlxIhVmIc-Bc7td21nXI4VhBmqALlmYkMPviW0d9I3R/exec";
+const DEFAULT_APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxzfV4BV3q0mEX1XMsFyvkccfh17CgJkyW1Cf51n5caaG849xoP3gunfQZaWn0nm73V/exec";
 
 // 브라우저 쿠키/저장소 차단(시크릿 모드/아이프레임 제한 등) 발생 시 크래시 방지를 위한 안전한 로컬스토리지 래퍼
 const inMemoryStorage: Record<string, string> = {};

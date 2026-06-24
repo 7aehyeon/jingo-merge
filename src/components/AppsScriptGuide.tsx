@@ -246,7 +246,7 @@ function doPost(e) {
         throw new Error("구글 Apps Script 프로젝트 설정(톱니바퀴) -> [스크립트 속성]에 'GEMINI_API_KEY' 항목을 이름표로 등록하고 구글에서 발급 받은 API 키를 저장해 주세요.");
       }
       
-      var url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + apiKey;
+      var url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=" + apiKey;
       var cleanBase = postData.fileBase64.replace(/^data:application\\/pdf;base64,/, "");
       
       var payloadData = {
