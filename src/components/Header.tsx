@@ -8,6 +8,7 @@ interface HeaderProps {
   setAppsScriptUrl: (val: string) => void;
   isSyncing: boolean;
   schoolName: string;
+  defaultUrl: string;
 }
 
 export default function Header({
@@ -16,7 +17,8 @@ export default function Header({
   appsScriptUrl,
   setAppsScriptUrl,
   isSyncing,
-  schoolName
+  schoolName,
+  defaultUrl
 }: HeaderProps) {
   const [showUrlInput, setShowUrlInput] = React.useState(false);
 
@@ -93,9 +95,19 @@ export default function Header({
                       </div>
                     )}
                     <button
+                      type="button"
+                      onClick={() => {
+                        setAppsScriptUrl(defaultUrl);
+                        localStorage.setItem('jj_apps_script_url', defaultUrl);
+                      }}
+                      className="w-full text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-600 font-medium py-1 rounded transition-all mt-1 border border-slate-200/50"
+                    >
+                      기본 연동 주소로 초기화
+                    </button>
+                    <button
                       onClick={() => setShowUrlInput(false)}
                       id="save-quick-url-btn"
-                      className="w-full text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-1.5 rounded-md transition-all"
+                      className="w-full text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-1.5 rounded-md transition-all mt-1"
                     >
                       설정 닫기
                     </button>

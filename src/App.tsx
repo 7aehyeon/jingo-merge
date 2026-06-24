@@ -126,7 +126,7 @@ const INITIAL_SUBMISSIONS: Submission[] = [
 // [초중요 - 배포 설정] 깃허브(GitHub Pages)에 정적 페이지로 배포 시, 모든 사용자의 브라우저에서 자동 연동이 되도록 
 // 본인의 구글 Apps Script 웹앱 URL(https://script.google.com/macros/s/.../exec) 주소를 아래 빈칸에 직접 붙여넣고 저장하세요.
 // 여기에 URL을 적어두면, 사용자가 사이트에 처음 접속할 때 따로 라이브러리 설정을 누르고 연동할 필요 없이 모든 데이터가 이 구글 시트로 들어가게 됩니다!
-const DEFAULT_APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyC3dsTF_wzbWRIvulvCgQHWP5V_KNNOCVonLf7BCPERchYShFmnLAmQGnl-WpMMrs6/exec";
+const DEFAULT_APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbz6zI6_5bJHyxCosDVRLPs3cUZ0i62g4JXxzDmhaq3eVwiStfPesh_CbGQd_5CqEeXI/exec";
 
 export default function App() {
   // State elements
@@ -164,6 +164,14 @@ export default function App() {
   });
 
   const [appsScriptUrl, setAppsScriptUrl] = useState<string>(() => {
+    // 만약 소스코드 내 DEFAULT_APPS_SCRIPT_URL이 변경되었다면, 이전 로컬스토리지의 구버전 주소를 덮어씌웁니다.
+    const lastDefault = localStorage.getItem('jj_last_default_url');
+    if (lastDefault !== DEFAULT_APPS_SCRIPT_URL) {
+      localStorage.setItem('jj_apps_script_url', DEFAULT_APPS_SCRIPT_URL);
+      localStorage.setItem('jj_last_default_url', DEFAULT_APPS_SCRIPT_URL);
+      return DEFAULT_APPS_SCRIPT_URL;
+    }
+
     let saved = localStorage.getItem('jj_apps_script_url');
     if (saved) {
       saved = saved.trim();
@@ -182,6 +190,7 @@ export default function App() {
   });
 
   // UI States
+  const [isInitialLoading, setIsInitialLoading] = useState<boolean>(false);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [syncStatus, setSyncStatus] = useState<string>('');
   const [isInitializingSheets, setIsInitializingSheets] = useState<boolean>(false);
@@ -495,6 +504,23 @@ export default function App() {
     localStorage.setItem('jj_apps_script_url', cleaned);
   }, [appsScriptUrl]);
 
+  // 최초 접속 및 구글 시트 데이터 실시간 자동 동기화 훅
+  useEffect(() => {
+    const initSync = async () => {
+      if (!appsScriptUrl) return;
+      
+      const hasLocalCache = localStorage.getItem('jj_roster') !== null;
+      if (!hasLocalCache) {
+        setIsInitialLoading(true);
+      }
+      
+      await pullDataFromGoogleSheets(true);
+      setIsInitialLoading(false);
+    };
+    
+    initSync();
+  }, [appsScriptUrl]);
+
   // Set default search staff topic once topics load
   useEffect(() => {
     if (topics.length > 0) {
@@ -724,6 +750,70 @@ export default function App() {
     }
   };
 
+  // Reusable helper to fetch latest data from Google Sheets
+  const pullDataFromGoogleSheets = async (silent = false) => {
+    if (!appsScriptUrl) {
+      if (!silent) showAlert('구글 Apps Script Web App URL을 먼저 연동해 주십시오.', 'error');
+      return false;
+    }
+
+    if (!silent) {
+      setIsPullingData(true);
+      setPullMessage('1/3. 구글 시트로부터 교직원 명렬을 다운로드하는 중...');
+    }
+
+    try {
+      // Fetch Roster
+      const rosterRes = await fetch(`${appsScriptUrl}?action=getRoster`);
+      const rosterJson = await rosterRes.json();
+      
+      if (!silent) setPullMessage('2/3. 구글 시트로부터 연수 목록을 다운로드하는 중...');
+      const topicsRes = await fetch(`${appsScriptUrl}?action=getTopics`);
+      const topicsJson = await topicsRes.json();
+
+      if (!silent) setPullMessage('3/3. 구글 시트로부터 전체 제출 현황을 다운로드하는 중...');
+      const subsRes = await fetch(`${appsScriptUrl}?action=getSubmissions`);
+      const subsJson = await subsRes.json();
+
+      let updated = false;
+
+      if (rosterJson.success && rosterJson.data && rosterJson.data.length > 0) {
+        setRoster(rosterJson.data);
+        localStorage.setItem('jj_roster', JSON.stringify(rosterJson.data));
+        updated = true;
+      }
+      if (topicsJson.success && topicsJson.data && topicsJson.data.length > 0) {
+        setTopics(topicsJson.data);
+        localStorage.setItem('jj_topics', JSON.stringify(topicsJson.data));
+        updated = true;
+      }
+      if (subsJson.success && subsJson.data) {
+        setSubmissions(subsJson.data);
+        localStorage.setItem('jj_submissions', JSON.stringify(subsJson.data));
+        updated = true;
+      }
+
+      if (!silent) {
+        setPullMessage('🎉 다운로드 완료! 구글 시트의 최신 교직원 데이터와 100% 동기화되었습니다.');
+        showAlert('구글 시트의 최신 데이터를 성공적으로 동기화했습니다!', 'success');
+        setTimeout(() => {
+          setIsPullingData(false);
+          setPullMessage('');
+        }, 3000);
+      }
+
+      return updated;
+    } catch (err: any) {
+      console.error('Error in pullDataFromGoogleSheets:', err);
+      if (!silent) {
+        showAlert(`데이터를 불러오는 중 오류가 발생했습니다. 구글 앱스 스크립트 배포 시 '액세스 권한이 있는 사용자'를 '모든 사람(Anyone)'으로 설정했는지 다시 한 번 확인해 주세요. 오류: ${err.message}`, 'error');
+        setIsPullingData(false);
+        setPullMessage('');
+      }
+      return false;
+    }
+  };
+
   // Retrieve latest database from Google Spreadsheet
   const handlePullAllData = async () => {
     if (!appsScriptUrl) {
@@ -735,44 +825,7 @@ export default function App() {
       return;
     }
 
-    setIsPullingData(true);
-    setPullMessage('1/3. 구글 시트로부터 교직원 명렬을 다운로드하는 중...');
-    
-    try {
-      // Fetch Roster
-      const rosterRes = await fetch(`${appsScriptUrl}?action=getRoster`);
-      const rosterJson = await rosterRes.json();
-      
-      setPullMessage('2/3. 구글 시트로부터 연수 목록을 다운로드하는 중...');
-      const topicsRes = await fetch(`${appsScriptUrl}?action=getTopics`);
-      const topicsJson = await topicsRes.json();
-
-      setPullMessage('3/3. 구글 시트로부터 전체 제출 현황을 다운로드하는 중...');
-      const subsRes = await fetch(`${appsScriptUrl}?action=getSubmissions`);
-      const subsJson = await subsRes.json();
-
-      if (rosterJson.success && rosterJson.data && rosterJson.data.length > 0) {
-        setRoster(rosterJson.data);
-      }
-      if (topicsJson.success && topicsJson.data && topicsJson.data.length > 0) {
-        setTopics(topicsJson.data);
-      }
-      if (subsJson.success && subsJson.data) {
-        setSubmissions(subsJson.data);
-      }
-
-      setPullMessage('🎉 다운로드 완료! 구글 시트의 최신 교직원 데이터와 100% 동기화되었습니다.');
-      showAlert('구글 시트의 최신 데이터를 성공적으로 동기화했습니다!', 'success');
-      setTimeout(() => {
-        setIsPullingData(false);
-        setPullMessage('');
-      }, 3000);
-    } catch (err: any) {
-      console.error(err);
-      showAlert(`데이터를 불러오는 중 오류가 발생했습니다. 구글 앱스 스크립트 배포 시 '액세스 권한이 있는 사용자'를 '모든 사람(Anyone)'으로 설정했는지 다시 한 번 확인해 주세요. 오류: ${err.message}`, 'error');
-      setIsPullingData(false);
-      setPullMessage('');
-    }
+    await pullDataFromGoogleSheets(false);
   };
 
   // Create new Topic (Opening training item)
@@ -1539,6 +1592,27 @@ export default function App() {
         </div>
       )}
 
+      {/* 최초 접속 시 스프레드시트 데이터 연동 오버레이 */}
+      {isInitialLoading && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4 transition-all animate-in fade-in duration-150">
+          <div className="bg-white border border-slate-100/80 rounded-2xl p-8 shadow-2xl flex flex-col items-center justify-center text-center space-y-5 max-w-sm animate-in zoom-in-95 duration-200">
+            <div className="relative flex items-center justify-center">
+              <div className="w-14 h-14 rounded-full border-4 border-indigo-100 border-t-indigo-600 animate-spin"></div>
+              <div className="absolute w-6 h-6 bg-indigo-50 rounded-full animate-pulse flex items-center justify-center">
+                <Database className="w-3.5 h-3.5 text-indigo-600 animate-pulse" />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <h3 className="text-sm font-extrabold text-slate-800">진주고등학교 연수 시스템</h3>
+              <p className="text-xs font-bold text-indigo-600">구글 스프레드시트 실시간 동기화 중</p>
+              <p className="text-[11px] text-slate-500 font-semibold leading-relaxed break-keep">
+                중앙 구글 시트 데이터베이스로부터 실시간 교직원 명단, 연수 개설 현황 및 제출 이력을 안전하게 불러오고 있습니다. 잠시만 기다려 주십시오...
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* admin authentication login modal */}
       {isLoginModalOpen && (
         <div className="fixed inset-0 bg-slate-900/45 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -1623,6 +1697,7 @@ export default function App() {
         setAppsScriptUrl={setAppsScriptUrl}
         isSyncing={isSyncing}
         schoolName="진주고등학교"
+        defaultUrl={DEFAULT_APPS_SCRIPT_URL}
       />
 
       <div className="flex-1 w-full max-w-7xl mx-auto flex flex-col lg:flex-row gap-6 p-4 lg:p-6" id="primary-wrapper">
