@@ -199,6 +199,20 @@ export default function App() {
 
   // Active view states (Admin topic monitoring)
   const [selectedTopicId, setSelectedTopicId] = useState<string>('topic-2');
+
+  // Format deadline string to YYYY-MM-DD cleanly
+  const formatDeadline = (deadlineStr: string) => {
+    if (!deadlineStr) return '';
+    // If it contains T, split by T
+    if (deadlineStr.includes('T')) {
+      return deadlineStr.split('T')[0];
+    }
+    // If it contains a space, split by space
+    if (deadlineStr.includes(' ')) {
+      return deadlineStr.split(' ')[0];
+    }
+    return deadlineStr;
+  };
   
   // Sorting states for dashboard live table
   const [sortKey, setSortKey] = useState<'name' | 'department' | 'type' | 'status' | null>(null);
@@ -1780,7 +1794,7 @@ export default function App() {
                         <div className="flex justify-between items-start gap-1 w-full">
                           <span className="font-bold line-clamp-1 flex-1">{topic.title}</span>
                           <span className="text-[9px] bg-slate-100 px-1 py-0.5 rounded text-slate-500 shrink-0 font-medium">
-                            {topic.deadline} 마감
+                            {formatDeadline(topic.deadline)} 마감
                           </span>
                         </div>
                         <p className="text-[11px] text-slate-400 line-clamp-1">{topic.content}</p>
@@ -2202,7 +2216,7 @@ export default function App() {
                           <div className="flex flex-wrap items-center justify-between text-[11px] text-slate-400 gap-2 border-t border-slate-100 pt-2 text-slate-500">
                             <span className="flex items-center gap-1">
                               <Calendar className="w-3 h-3 text-indigo-500" />
-                              <span>기한: <strong className="text-slate-700">{topic.deadline}</strong></span>
+                              <span>기한: <strong className="text-slate-700">{formatDeadline(topic.deadline)}</strong></span>
                             </span>
                             <span>등록일: {topic.createdAt}</span>
                             <div className="flex gap-2 items-center">
@@ -3093,7 +3107,7 @@ export default function App() {
                                       <span>•</span>
                                       <span>이수번호: {sub ? <span className="font-mono text-slate-600">{sub.certNumber}</span> : '미제출'}</span>
                                       <span>•</span>
-                                      <span>기한: ~ {topic.deadline}</span>
+                                      <span>기한: ~ {formatDeadline(topic.deadline)}</span>
                                     </div>
                                   </div>
 
@@ -3248,7 +3262,7 @@ export default function App() {
                           <div className="flex justify-between items-start gap-1">
                             <h4 className="text-xs font-bold text-slate-800 line-clamp-1">{topic.title}</h4>
                             <span className="text-[9px] bg-slate-200 border border-slate-300/40 text-slate-600 px-1.5 py-0.5 rounded font-bold shrink-0">
-                              ~ {topic.deadline}
+                              ~ {formatDeadline(topic.deadline)}
                             </span>
                           </div>
                           <p className="text-[11px] text-slate-400 line-clamp-1 leading-normal">{topic.content}</p>
