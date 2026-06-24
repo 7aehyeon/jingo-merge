@@ -73,7 +73,17 @@ export default function Header({
                       id="quick-apps-script-url-input"
                       placeholder="https://script.google.com/macros/s/.../exec"
                       value={appsScriptUrl}
-                      onChange={(e) => setAppsScriptUrl(e.target.value)}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        let cleaned = val.trim();
+                        // Handle common copy-paste errors where users leave 'script.google' from placeholder
+                        if (cleaned.includes('https://') && !cleaned.startsWith('https://')) {
+                          cleaned = cleaned.substring(cleaned.indexOf('https://'));
+                        } else if (cleaned.includes('http://') && !cleaned.startsWith('http://')) {
+                          cleaned = cleaned.substring(cleaned.indexOf('http://'));
+                        }
+                        setAppsScriptUrl(cleaned);
+                      }}
                       className="w-full text-xs px-3 py-2 border border-slate-200 rounded-md focus:outline-none focus:border-indigo-500 font-mono"
                     />
                     {appsScriptUrl && (
