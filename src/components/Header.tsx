@@ -39,7 +39,7 @@ export default function Header({
                 v1.2 Live
               </span>
             </div>
-            <p className="text-xs text-slate-400">교직원 연수 개설, PDF 자동 이수증 인식 및 스프레드시트 관리</p>
+            <p className="text-xs text-slate-400">교직원 연수 이수증 취합 및 관리</p>
           </div>
         </div>
 

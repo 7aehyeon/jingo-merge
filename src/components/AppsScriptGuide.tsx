@@ -168,6 +168,48 @@ function doPost(e) {
       
       responseData.message = "신규 연수 개설 및 개별 취합 시트('" + newSheetName + "') 생성 완료!";
       
+    } else if (action === "editTopic") {
+      var sheet = ss.getSheetByName("연수목록");
+      var topic = postData.topic;
+      var rows = sheet.getDataRange().getValues();
+      var updateIndex = -1;
+      for (var i = 1; i < rows.length; i++) {
+        if (rows[i][0] === topic.id) {
+          updateIndex = i + 1;
+          break;
+        }
+      }
+      var rowData = [
+        topic.id,
+        topic.title,
+        topic.content,
+        topic.deadline,
+        "true", // sheetCreated
+        topic.createdAt
+      ];
+      if (updateIndex > -1) {
+        var oldTitle = rows[updateIndex - 1][1];
+        sheet.getRange(updateIndex, 1, 1, 6).setValues([rowData]);
+        
+        // 시트명 변경
+        var oldSheetName = oldTitle.length > 25 ? oldTitle.substring(0, 25) + "..." : oldTitle;
+        oldSheetName = oldSheetName.replace(/[:\\/?*[\\]]/g, "_");
+        
+        var newSheetName = topic.title.length > 25 ? topic.title.substring(0, 25) + "..." : topic.title;
+        newSheetName = newSheetName.replace(/[:\\/?*[\\]]/g, "_");
+        
+        if (oldSheetName !== newSheetName) {
+          var targetSheet = ss.getSheetByName(oldSheetName);
+          if (targetSheet) {
+            targetSheet.setName(newSheetName);
+          }
+        }
+        responseData.message = "연수 정보 및 시트명이 수정되었습니다.";
+      } else {
+        sheet.appendRow(rowData);
+        responseData.message = "연수 정보가 등록되었습니다.";
+      }
+      
     } else if (action === "submitCertificate") {
       var submissionsSheet = ss.getSheetByName("전체제출현황");
       var sub = postData.submission;
@@ -246,7 +288,7 @@ function doPost(e) {
         throw new Error("구글 Apps Script 프로젝트 설정(톱니바퀴) -> [스크립트 속성]에 'GEMINI_API_KEY' 항목을 이름표로 등록하고 구글에서 발급 받은 API 키를 저장해 주세요.");
       }
       
-      var url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=" + apiKey;
+      var url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + apiKey;
       var cleanBase = postData.fileBase64.replace(/^data:application\\/pdf;base64,/, "");
       
       var payloadData = {

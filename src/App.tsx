@@ -126,7 +126,7 @@ const INITIAL_SUBMISSIONS: Submission[] = [
 // [초중요 - 배포 설정] 깃허브(GitHub Pages)에 정적 페이지로 배포 시, 모든 사용자의 브라우저에서 자동 연동이 되도록 
 // 본인의 구글 Apps Script 웹앱 URL(https://script.google.com/macros/s/.../exec) 주소를 아래 빈칸에 직접 붙여넣고 저장하세요.
 // 여기에 URL을 적어두면, 사용자가 사이트에 처음 접속할 때 따로 라이브러리 설정을 누르고 연동할 필요 없이 모든 데이터가 이 구글 시트로 들어가게 됩니다!
-const DEFAULT_APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbya80yr84GaSnU5irPU-XqhToa3y-KUUUPoeDO3geHvIjs7X7J_ZVSlWFQpmixzK-SJ/exec";
+const DEFAULT_APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyaGxcZNsT1InKN9-ePhKRS1gArvyBIpN9_xaC4xU_dFV0E7hMzfBnfx_x2Gyhyj6aK/exec";
 
 // 브라우저 쿠키/저장소 차단(시크릿 모드/아이프레임 제한 등) 발생 시 크래시 방지를 위한 안전한 로컬스토리지 래퍼
 const inMemoryStorage: Record<string, string> = {};
@@ -240,6 +240,13 @@ export default function App() {
   const [creationMessage, setCreationMessage] = useState('');
   const [selectedTargetIds, setSelectedTargetIds] = useState<string[]>([]);
   const [linkStatutorySubmissions, setLinkStatutorySubmissions] = useState<boolean>(false);
+
+  // Topic editing States
+  const [editingTopic, setEditingTopic] = useState<TrainingTopic | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editContent, setEditContent] = useState('');
+  const [editDeadline, setEditDeadline] = useState('');
+  const [editCreator, setEditCreator] = useState('');
 
   // Roster addition States
   const [newMemberName, setNewMemberName] = useState('');
@@ -893,8 +900,24 @@ export default function App() {
       creator: newCreator.trim() || undefined,
     };
 
+    // 법정의무연수 꾸러미 연동 설정이 되어 있다면, 기존에 제출된 꾸러미 이수 데이터들을 새 토픽용으로 연동(복제)한다.
+    let extraSubsToCreate: Submission[] = [];
+    if (linkStatutorySubmissions) {
+      const statutorySubs = submissions.filter(s => s.topicId === 'topic-statutory-combined');
+      statutorySubs.forEach(statSub => {
+        extraSubsToCreate.push({
+          ...statSub,
+          id: `linked-${statSub.id}-${newTopic.id}-${Date.now()}`,
+          topicId: newTopic.id
+        });
+      });
+    }
+
     const updatedTopics = [...topics, newTopic];
+    const updatedSubmissions = [...submissions, ...extraSubsToCreate];
+
     setTopics(updatedTopics);
+    setSubmissions(updatedSubmissions);
     setNewTitle('');
     setNewContent('');
     setNewCreator('');
@@ -905,6 +928,7 @@ export default function App() {
     if (appsScriptUrl) {
       setIsSyncing(true);
       try {
+        // 1. 신규 토픽 시트 생성
         await fetch(appsScriptUrl, {
           method: 'POST',
           mode: 'no-cors',
@@ -914,7 +938,24 @@ export default function App() {
             topic: newTopic
           })
         });
-        setCreationMessage(`🎉 신규 연수 개설 및 스프레드시트에 전용 시트('${newTopic.title.substring(0, 15)}')가 동시 자동 추가되었습니다!`);
+
+        // 2. 만약 기존의 복제 연동할 이수 데이터가 있다면, 신규 시트에도 POST하여 저장한다.
+        if (extraSubsToCreate.length > 0) {
+          for (const extSub of extraSubsToCreate) {
+            await fetch(appsScriptUrl, {
+              method: 'POST',
+              mode: 'no-cors',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                action: 'submitCertificate',
+                submission: extSub,
+                topicTitle: newTopic.title
+              })
+            });
+          }
+        }
+
+        setCreationMessage(`🎉 신규 연수 개설 및 스프레드시트에 전용 시트('${newTopic.title.substring(0, 15)}')가 동시 자동 추가되었습니다!${extraSubsToCreate.length > 0 ? ` (기존 꾸러미 이수 내역 ${extraSubsToCreate.length}건 동시 자동 연동 완료)` : ''}`);
       } catch (err) {
         console.error("Failed to sync new topic online:", err);
       }
@@ -925,6 +966,48 @@ export default function App() {
     // Reset selectedTargetIds to everyone
     setSelectedTargetIds(roster.map(r => r.id));
     setTimeout(() => setCreationMessage(''), 5000);
+  };
+
+  const handleEditTopic = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingTopic) return;
+    if (!editTitle.trim() || !editContent.trim()) {
+      showAlert('연수 과정명과 내용을 입력해주세요.', 'error');
+      return;
+    }
+
+    const updatedTopic: TrainingTopic = {
+      ...editingTopic,
+      title: editTitle.trim(),
+      content: editContent.trim(),
+      deadline: editDeadline,
+      creator: editCreator.trim() || undefined,
+    };
+
+    // Update locally
+    const updatedTopics = topics.map(t => t.id === editingTopic.id ? updatedTopic : t);
+    setTopics(updatedTopics);
+    setEditingTopic(null);
+    showAlert(`🎉 연수 '${updatedTopic.title}' 정보가 성공적으로 수정되었습니다.`, 'success');
+
+    // Apps Script Sync
+    if (appsScriptUrl) {
+      setIsSyncing(true);
+      try {
+        await fetch(appsScriptUrl, {
+          method: 'POST',
+          mode: 'no-cors',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'editTopic',
+            topic: updatedTopic
+          })
+        });
+      } catch (err) {
+        console.error("Failed to sync edited topic online:", err);
+      }
+      setIsSyncing(false);
+    }
   };
 
   // Register New Member to Roster
@@ -1252,8 +1335,33 @@ export default function App() {
 
   // 법정의무연수 꾸러미 상호 실시간 자동 연동 함수 (I, II ↔ 통합)
   const syncStatutorySubmissions = (currentSubmissions: Submission[], activeSub: Submission): { updatedList: Submission[]; extraProcessed: { sub: Submission; topicTitle: string }[] } => {
-    // 단일 시트 '2026학년도 법정의무연수 꾸러미 과정' 고정 취합 처리로 더 이상 다수 토픽간 복제 연동이 필요하지 않습니다.
-    return { updatedList: currentSubmissions, extraProcessed: [] };
+    const extraProcessed: { sub: Submission; topicTitle: string }[] = [];
+    let updatedList = [...currentSubmissions];
+
+    // 만약 제출한 토픽이 '법정의무연수 꾸러미' (topic-statutory-combined)인 경우
+    if (activeSub.topicId === 'topic-statutory-combined') {
+      // linkStatutorySubmissions가 true이면서 꾸러미가 아닌 다른 모든 연수를 찾음
+      const linkedTopics = topics.filter(t => t.linkStatutorySubmissions && t.id !== 'topic-statutory-combined');
+      
+      linkedTopics.forEach(topic => {
+        // 이 개별 연수에 이전에 해당 교직원의 연동 또는 개별 이수 기록이 있었다면 일단 필터링하여 덮어쓰기 처리
+        updatedList = updatedList.filter(s => !(s.topicId === topic.id && s.name === activeSub.name));
+        
+        const linkedSub: Submission = {
+          ...activeSub,
+          id: `linked-${activeSub.id}-${topic.id}-${Date.now()}`,
+          topicId: topic.id
+        };
+        
+        updatedList.push(linkedSub);
+        extraProcessed.push({
+          sub: linkedSub,
+          topicTitle: topic.title
+        });
+      });
+    }
+
+    return { updatedList, extraProcessed };
   };
 
   // Submit complete Training Certificate (교직원 연수 신청/이수증 업로드 완료)
@@ -1641,7 +1749,7 @@ export default function App() {
             <div className="space-y-1">
               <p className="text-xs font-extrabold text-slate-800">연수 데이터 처리 중</p>
               <p className="text-[10px] text-slate-400 font-bold leading-normal break-keep">
-                {isAnalyzing ? 'Gemini AI가 이수증 이수 번호, 일자, 이사 시간을 정밀하게 자동 분석 중입니다...' : (loadingMessage || '구글 스프레드시트 실시간 동기화 및 원격 연동 작업을 수행 중입니다. 잠시만 기다려 주십시오.')}
+                {isAnalyzing ? 'Gemini AI가 이수증 이수 번호, 일자, 이수 시간을 정밀하게 자동 분석 중입니다...' : (loadingMessage || '구글 스프레드시트 실시간 동기화 및 원격 연동 작업을 수행 중입니다. 잠시만 기다려 주십시오.')}
               </p>
             </div>
           </div>
@@ -1735,6 +1843,91 @@ export default function App() {
         </div>
       )}
 
+      {/* Topic Edit Modal */}
+      {editingTopic && (
+        <div className="fixed inset-0 bg-slate-900/45 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white w-full max-w-md rounded-2xl p-6.5 shadow-2xl relative border-t-4 border-indigo-600 animate-in zoom-in duration-200">
+            <button
+              onClick={() => setEditingTopic(null)}
+              className="absolute top-4 right-4 p-1.5 text-slate-400 hover:text-slate-600 rounded-lg transition-colors cursor-pointer"
+            >
+              <X className="w-4.5 h-4.5" />
+            </button>
+            <div className="text-center space-y-2 mb-6">
+              <div className="w-12 h-12 bg-indigo-50 text-indigo-600 mx-auto rounded-full flex items-center justify-center">
+                <Edit2 className="w-5.5 h-5.5" />
+              </div>
+              <h3 className="text-lg font-bold text-slate-800">이수증 취합 게시물 수정</h3>
+              <p className="text-xs text-slate-400 leading-normal">
+                이수증 취합 게시물의 상세 내용을 수정하고 스프레드시트와 동기화합니다.
+              </p>
+            </div>
+
+            <form onSubmit={handleEditTopic} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 mb-1">연수 과정명</label>
+                <input
+                  type="text"
+                  value={editTitle}
+                  onChange={(e) => setEditTitle(e.target.value)}
+                  className="w-full text-xs px-3.5 py-2.5 border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-600 bg-white"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 mb-1">상세 연수 내용 및 범위</label>
+                <textarea
+                  rows={3}
+                  value={editContent}
+                  onChange={(e) => setEditContent(e.target.value)}
+                  className="w-full text-xs px-3.5 py-2.5 border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-600 bg-white"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 mb-1">제출 마감 기한 설정</label>
+                <input
+                  type="date"
+                  value={editDeadline}
+                  onChange={(e) => setEditDeadline(e.target.value)}
+                  className="w-full text-xs px-3.5 py-2.5 border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-600 bg-white"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 mb-1">담당 부서 및 담당자명</label>
+                <input
+                  type="text"
+                  value={editCreator}
+                  onChange={(e) => setEditCreator(e.target.value)}
+                  className="w-full text-xs px-3.5 py-2.5 border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-600 bg-white"
+                  placeholder="예: 1학년부 박재현"
+                />
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingTopic(null)}
+                  className="flex-1 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 font-semibold rounded-xl text-xs transition-all cursor-pointer"
+                >
+                  취소
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl text-xs transition-all shadow-sm cursor-pointer"
+                >
+                  수정 사항 저장
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Primary Header Component */}
       <Header
         isAdmin={isAdmin}
@@ -1763,11 +1956,11 @@ export default function App() {
           <div>
             <div className="flex items-center gap-3 mb-6">
               <div className="w-10 h-10 bg-indigo-600 rounded-lg flex items-center justify-center text-white font-bold text-lg">
-                진고
+                📚
               </div>
               <div>
-                <h3 className="text-sm font-bold text-slate-900">진주고등학교</h3>
-                <p className="text-[10px] text-indigo-600 font-bold uppercase tracking-widest">연수 취합 시스템</p>
+                <h3 className="text-sm font-bold text-slate-900">어서오세요!</h3>
+                <p className="text-[10px] text-indigo-600 font-bold uppercase tracking-widest">이수증 취합 시스템에 오신 것을 환영합니다.</p>
               </div>
             </div>
 
@@ -1782,7 +1975,7 @@ export default function App() {
                 }`}
               >
                 <Layers className="w-4 h-4" />
-                <span>취합 통합 대시보드</span>
+                <span>이수증 취합 대시보드</span>
               </button>
 
               <button
@@ -1794,7 +1987,7 @@ export default function App() {
                 }`}
               >
                 <UserCheck className="w-4 h-4" />
-                <span>나의 연수 및 이수 제출</span>
+                <span>나의 이수증 제출</span>
               </button>
 
               <button
@@ -1806,7 +1999,7 @@ export default function App() {
                 }`}
               >
                 <BookOpen className="w-4 h-4" />
-                <span>연수 이수증 개설 관리</span>
+                <span>이수증 취합 게시물 개설 관리</span>
               </button>
 
               {isAdmin && (
@@ -1943,7 +2136,7 @@ export default function App() {
                     <span>대상 연수 선택</span>
                   </h3>
                   <p className="text-xs text-slate-400 leading-normal">
-                    이수 여부를 확인하고 통합 장부를 엑셀(CSV) 다운로드할 연수를 선택하십시오.
+                    이수 여부를 확인하고 취합 현황을 엑셀(*.csv)로 다운로드할 연수를 선택하십시오.
                   </p>
 
                   <div className="space-y-2 max-h-[280px] overflow-y-auto pr-1">
@@ -1975,7 +2168,7 @@ export default function App() {
                         onClick={() => setActiveTab('topics')}
                         className="w-full py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-semibold rounded-xl text-xs transition-all flex items-center justify-center gap-1 cursor-pointer"
                       >
-                        <span>신규 취합 연수 개설하기</span>
+                        <span>신규 이수증 취합 개설하기</span>
                         <PlusCircle className="w-3.5 h-3.5" />
                       </button>
                     </div>
@@ -2144,7 +2337,7 @@ export default function App() {
                   ) : (
                     <div className="flex-1 flex flex-col items-center justify-center py-12 text-slate-400">
                       <BookOpen className="w-12 h-12 text-slate-300 mb-2" />
-                      <p className="text-xs">이수증 취합 목록 개설을 추가해 주십시오.</p>
+                      <p className="text-xs">이수증 취합 게시물을 추가해 주십시오.</p>
                     </div>
                   )}
                 </div>
@@ -2161,10 +2354,10 @@ export default function App() {
                 <form onSubmit={handleCreateTopic} className="bg-white border border-slate-200/80 p-6 rounded-2xl shadow-sm space-y-4">
                   <h3 className="text-sm font-bold text-slate-800 tracking-tight flex items-center gap-2">
                     <span className="w-1 h-3.5 bg-indigo-600 rounded"></span>
-                    <span>취합 이수증 개설 목록 추가</span>
+                    <span>이수증 취합 게시물 추가</span>
                   </h3>
                   <p className="text-xs text-slate-400 leading-normal">
-                    교원, 공무직, 일반직 등의 구분을 두고 신규 연수 이수 취합 목록을 개설합니다. 구글 시트와 연동되어 있다면 **해당 연수명의 전용 취합 시트가 실시간으로 자동 추가**됩니다.
+                    교원, 공무직, 일반직 등의 구분을 두고 신규 이수증 취합 목록을 개설합니다. 구글 시트와 연동되어 있다면 해당 연수명의 전용 취합 시트가 실시간으로 자동 추가됩니다.
                   </p>
 
                   <div className="space-y-3.5">
@@ -2172,7 +2365,7 @@ export default function App() {
                       <label className="block text-xs font-semibold text-slate-500 mb-1">연수 과정명</label>
                       <input
                         type="text"
-                        placeholder="예: 2026학년도 교원 인공지능 안전 교육"
+                        placeholder="예: 2026학년도 교직원 안전 교육"
                         value={newTitle}
                         onChange={(e) => setNewTitle(e.target.value)}
                         className="w-full text-xs px-3.5 py-2.5 border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-600 bg-white"
@@ -2183,7 +2376,7 @@ export default function App() {
                       <label className="block text-xs font-semibold text-slate-500 mb-1">상세 연수 내용 및 범위</label>
                       <textarea
                         rows={3}
-                        placeholder="교직원들이 제출 시 인지해야 할 과정 설명, 연수 포털 기관 범위 등을 적어주세요."
+                        placeholder="교직원들이 제출 시 참고할 과정 설명, 연수 포털 기관, 연수과정 웹주소 등을 적어주세요."
                         value={newContent}
                         onChange={(e) => setNewContent(e.target.value)}
                         className="w-full text-xs px-3.5 py-2.5 border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-600 bg-white"
@@ -2191,7 +2384,7 @@ export default function App() {
                     </div>
 
                     <div>
-                      <label className="block text-xs font-semibold text-slate-500 mb-1">이수증 마감 기한 설정</label>
+                      <label className="block text-xs font-semibold text-slate-500 mb-1">제출 마감 기한 설정</label>
                       <div className="relative">
                         <input
                           type="date"
@@ -2207,7 +2400,7 @@ export default function App() {
                       <label className="block text-xs font-semibold text-slate-500 mb-1">담당 부서 및 담당자명</label>
                       <input
                         type="text"
-                        placeholder="예: 교육정보부 박교사 (선택)"
+                        placeholder="예: 1학년부 박재현(선택사항/입력을 권장합니다.)"
                         value={newCreator}
                         onChange={(e) => setNewCreator(e.target.value)}
                         className="w-full text-xs px-3.5 py-2.5 border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-600 bg-white"
@@ -2228,14 +2421,14 @@ export default function App() {
                             🛡️ 법정의무연수 꾸러미 이수 데이터 연동 여부
                           </span>
                           <p className="text-[10px] text-slate-400 leading-normal font-medium select-none">
-                            이 옵션을 제어·체크하면, 해당 연수 과정에 교직원들이 제출한 '법정의무연수 꾸러미 과정'의 최종 이수 완료 여부 및 세부 이수번호/제출일자가 실시간 자동 연계·반영됩니다. (별도 수집 없이도 즉시 자동 이수 완료 처리됨)
+                            이 옵션을 체크하면, 신규로 개설할 이수증 취합 게시물에 교직원들이 제출한 '법정의무연수 꾸러미 과정'의 이수 완료 여부 및 이수번호/시간/일자가 실시간 자동 연계·반영됩니다. (신규 게시글 개설 후에 꾸러미를 이수해도 연동되어 완료 처리됨, 즉 꾸러미의 이수 관련 데이터가 덮어씌워짐.)
                           </p>
                         </div>
                       </label>
                     </div>
 
                     <div>
-                      <span className="block text-xs font-semibold text-slate-500 mb-1.5">이수증 제출 대상 교직원 지정 (직종 클릭 시 해당 직종 전체선택)</span>
+                      <span className="block text-xs font-semibold text-slate-500 mb-1.5">이수증 제출 대상 교직원 지정(직종 클릭 시 해당 직종 전체선택)</span>
                       
                       {/* Job type bulk-toggles */}
                       <div className="flex flex-wrap gap-2 mb-3">
@@ -2355,7 +2548,7 @@ export default function App() {
                     className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl text-xs transition-all shadow-sm flex items-center justify-center gap-1.5"
                   >
                     <PlusCircle className="w-4 h-4" />
-                    <span>개설 연수 등록 및 취합 시트 생성</span>
+                    <span>이수증 취합 게시물 등록 및 시트 생성</span>
                   </button>
                 </form>
               </div>
@@ -2378,17 +2571,32 @@ export default function App() {
                               <h4 className="font-bold text-slate-800 text-sm leading-snug">{topic.title}</h4>
                               <p className="text-[11px] text-slate-400 mt-1">{topic.content}</p>
                             </div>
-                            <button
-                              onClick={() => {
-                                if (confirm('해당 연수를 취합 목록에서 제거합니까? 기제출 자료들도 비활성화 됩니다.')) {
-                                  setTopics(topics.filter(t => t.id !== topic.id));
-                                }
-                              }}
-                              className="text-slate-300 hover:text-rose-500 transition-colors p-1"
-                              title="삭제"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
+                            <div className="flex items-center gap-1 shrink-0">
+                              <button
+                                onClick={() => {
+                                  setEditingTopic(topic);
+                                  setEditTitle(topic.title);
+                                  setEditContent(topic.content);
+                                  setEditDeadline(formatDeadline(topic.deadline));
+                                  setEditCreator(topic.creator || '');
+                                }}
+                                className="text-slate-300 hover:text-indigo-600 transition-colors p-1 cursor-pointer"
+                                title="수정"
+                              >
+                                <Edit2 className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={() => {
+                                  if (confirm('해당 연수를 취합 목록에서 제거합니까? 기제출 자료들도 비활성화 됩니다.')) {
+                                    setTopics(topics.filter(t => t.id !== topic.id));
+                                  }
+                                }}
+                                className="text-slate-300 hover:text-rose-500 transition-colors p-1 cursor-pointer"
+                                title="삭제"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
                           </div>
 
                           <div className="flex flex-wrap items-center justify-between text-[11px] text-slate-400 gap-2 border-t border-slate-100 pt-2 text-slate-500">
@@ -2708,7 +2916,7 @@ export default function App() {
                       <span>1단계: 교직원 성명 확인</span>
                     </h3>
                     <p className="text-xs text-slate-400">
-                      정확한 제출자 매핑을 위해 진주고에 등록된 본인의 이름을 입력하고 확인 버튼을 누릅니다.
+                      정확한 제출자 확인을 위해 시스템에 등록된 본인의 성명을 입력하고 확인 버튼을 누릅니다.
                     </p>
 
                     <div className="flex gap-2">
@@ -2775,7 +2983,7 @@ export default function App() {
                                 : 'text-slate-500'
                             }`}
                           >
-                            PDF 자동 추출 업로드
+                            PDF 업로드(스크래핑))
                           </button>
                           <button
                             type="button"
@@ -2788,7 +2996,7 @@ export default function App() {
                                 : 'text-slate-500'
                             }`}
                           >
-                            직접 수동 입력
+                            수동 입력(직접 입력))
                           </button>
                         </div>
                       </div>
@@ -2808,15 +3016,15 @@ export default function App() {
                         </select>
                         {selectedStaffTopicId === 'topic-statutory-combined' ? (
                           <p className="text-[10px] text-indigo-600 mt-1 font-medium bg-indigo-50/50 p-2 rounded-lg border border-indigo-100/40 select-none">
-                            🛡️ <strong>'2026학년도 법정의무연수 꾸러미 과정'</strong>은 I과정 및 II과정 개별 입력과 통합 분석이 모두 지원되는 통합형 상시 시트입니다.
+                            🛡️ <strong>'2026학년도 법정의무연수 꾸러미 과정'</strong>은 I과정 및 II과정 개별 제출과 통합 제출이 모두 지원됩니다.
                           </p>
                         ) : topics.find(t => t.id === selectedStaffTopicId)?.linkStatutorySubmissions ? (
                           <p className="text-[10px] text-emerald-600 mt-1 font-medium bg-emerald-50/50 p-2 rounded-lg border border-emerald-100/40 select-none animate-in fade-in">
-                            🔗 본 과정은 <strong>'법정의무연수 꾸러미 과정' 이수자 자동 연동</strong>이 활성화되어 있습니다. 꾸러미를 완성해 두셨다면 본 과정에도 실시간으로 해당 정보가 연계·적용됩니다.
+                            🔗 본 과정은 <strong>'법정의무연수 꾸러미 과정' 이수자 자동 연동</strong>이 활성화되어 있습니다. 꾸러미를 이수하여 제출하셨다면 본 과정에도 실시간으로 해당 정보가 연계·적용됩니다.
                           </p>
                         ) : (
                           <p className="text-[10px] text-slate-500 mt-1 font-medium bg-slate-50 p-2 rounded-lg border border-slate-200/40 select-none animate-in fade-in">
-                            ℹ️ 지정하신 개별 연수 시트에 본 이수증 정보를 단독으로 등록 및 접수합니다.
+                            ℹ️ 선택하신 게시글에 이수 정보를 등록합니다.
                           </p>
                         )}
                       </div>
@@ -3212,7 +3420,7 @@ export default function App() {
                         )}
 
                         <div>
-                          <label className="block text-xs font-semibold text-slate-500 mb-1">이수 연수 시간 (시간)</label>
+                          <label className="block text-xs font-semibold text-slate-500 mb-1">이수 시간</label>
                           <input
                             type="number"
                             min="1"
@@ -3243,10 +3451,10 @@ export default function App() {
                     <div className="border-b border-slate-100 pb-3">
                       <h3 className="text-sm font-bold text-slate-800 tracking-tight flex items-center gap-2">
                         <span className="w-1 h-3.5 bg-indigo-600 rounded"></span>
-                        <span>나의 연수 이수 접수 현황 상세 조회</span>
+                        <span>나의 이수증 제출 현황 상세 조회</span>
                       </h3>
                       <p className="text-xs text-slate-400 mt-0.5">
-                        진주고등학교에 등록된 본인의 이수증 제출 및 대상 연수 목록 상세 현황판입니다.
+                        시스템에 등록된 본인의 이수증 제출 목록 상세 현황판입니다.
                       </p>
                     </div>
 
@@ -3271,7 +3479,7 @@ export default function App() {
 
                         <div className="space-y-2.5">
                           <h4 className="text-xs font-extrabold text-slate-700">
-                            본인 대상 취합 연수 현황 ({topics.filter(t => !t.targets || t.targets.includes(matchedStaff.id)).length}개 과정)
+                            본인 대상 이수증 취합 게시물 현황 ({topics.filter(t => !t.targets || t.targets.includes(matchedStaff.id)).length}개 과정)
                           </h4>
                           
                           <div className="space-y-2 max-h-[440px] overflow-y-auto pr-1">
@@ -3434,10 +3642,10 @@ export default function App() {
                   <div>
                     <h3 className="text-sm font-bold text-slate-800 tracking-tight flex items-center gap-2">
                       <span className="w-1.5 h-3.5 bg-indigo-600 rounded"></span>
-                      <span>🏫 진주고등학교 연수 취합 실시간 종합 현황판</span>
+                      <span>🏫 진주고등학교 이수증 취합 실시간 종합 현황판</span>
                     </h3>
                     <p className="text-xs text-slate-400 mt-0.5">
-                      각 연수별 전체 교직원의 제출 현황을 투명하게 확인하고 서로 독려할 수 있는 실시간 현황판입니다.
+                      각 연수별 전체 교직원의 제출 현황을 확인하고 서로 독려할 수 있는 실시간 현황판입니다.
                     </p>
                   </div>
                   
