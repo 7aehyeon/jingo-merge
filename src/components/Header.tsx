@@ -36,7 +36,7 @@ export default function Header({
                 {schoolName} 연수 취합 시스템
               </h1>
               <span className="text-[10px] tracking-wide font-mono bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded font-semibold uppercase">
-                v1.2 Live
+                v1.0.1
               </span>
             </div>
             <p className="text-xs text-slate-400">교직원 연수 이수증 취합 및 관리</p>

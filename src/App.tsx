@@ -2162,17 +2162,15 @@ export default function App() {
                     ))}
                   </div>
 
-                  {isAdmin && (
-                    <div className="pt-2">
-                      <button
-                        onClick={() => setActiveTab('topics')}
-                        className="w-full py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-semibold rounded-xl text-xs transition-all flex items-center justify-center gap-1 cursor-pointer"
-                      >
-                        <span>신규 이수증 취합 개설하기</span>
-                        <PlusCircle className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  )}
+                  <div className="pt-2">
+                    <button
+                      onClick={() => setActiveTab('topics')}
+                      className="w-full py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-semibold rounded-xl text-xs transition-all flex items-center justify-center gap-1 cursor-pointer"
+                    >
+                      <span>신규 이수증 취합 개설하기</span>
+                      <PlusCircle className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
 
                 {/* Right submission list panel */}
@@ -2571,32 +2569,34 @@ export default function App() {
                               <h4 className="font-bold text-slate-800 text-sm leading-snug">{topic.title}</h4>
                               <p className="text-[11px] text-slate-400 mt-1">{topic.content}</p>
                             </div>
-                            <div className="flex items-center gap-1 shrink-0">
-                              <button
-                                onClick={() => {
-                                  setEditingTopic(topic);
-                                  setEditTitle(topic.title);
-                                  setEditContent(topic.content);
-                                  setEditDeadline(formatDeadline(topic.deadline));
-                                  setEditCreator(topic.creator || '');
-                                }}
-                                className="text-slate-300 hover:text-indigo-600 transition-colors p-1 cursor-pointer"
-                                title="수정"
-                              >
-                                <Edit2 className="w-3.5 h-3.5" />
-                              </button>
-                              <button
-                                onClick={() => {
-                                  if (confirm('해당 연수를 취합 목록에서 제거합니까? 기제출 자료들도 비활성화 됩니다.')) {
-                                    setTopics(topics.filter(t => t.id !== topic.id));
-                                  }
-                                }}
-                                className="text-slate-300 hover:text-rose-500 transition-colors p-1 cursor-pointer"
-                                title="삭제"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
+                            {isAdmin && (
+                              <div className="flex items-center gap-1 shrink-0">
+                                <button
+                                  onClick={() => {
+                                    setEditingTopic(topic);
+                                    setEditTitle(topic.title);
+                                    setEditContent(topic.content);
+                                    setEditDeadline(formatDeadline(topic.deadline));
+                                    setEditCreator(topic.creator || '');
+                                  }}
+                                  className="text-slate-300 hover:text-indigo-600 transition-colors p-1 cursor-pointer"
+                                  title="수정"
+                                >
+                                  <Edit2 className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    if (confirm('해당 연수를 취합 목록에서 제거합니까? 기제출 자료들도 비활성화 됩니다.')) {
+                                      setTopics(topics.filter(t => t.id !== topic.id));
+                                    }
+                                  }}
+                                  className="text-slate-300 hover:text-rose-500 transition-colors p-1 cursor-pointer"
+                                  title="삭제"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            )}
                           </div>
 
                           <div className="flex flex-wrap items-center justify-between text-[11px] text-slate-400 gap-2 border-t border-slate-100 pt-2 text-slate-500">
@@ -3441,6 +3441,8 @@ export default function App() {
                       </button>
                     </div>
                   )}
+
+
                 </div>
 
                 {/* 2. My list tracking & Single print */}
@@ -3555,79 +3557,8 @@ export default function App() {
                           <HelpCircle className="w-8 h-8 text-indigo-400 mx-auto animate-bounce duration-1000" />
                           <h4 className="font-semibold text-xs text-slate-700">이름을 먼저 확인해 주세요</h4>
                           <p className="text-[11px] text-slate-400 leading-normal max-w-xs mx-auto">
-                            본인의 연수 이수 상태 및 상세 현황을 모아보기 위해, 왼쪽 <strong className="text-indigo-600">"1단계: 교직원 성명 확인"</strong>에 이름을 기재하고 먼저 인증하십시오.
+                            본인의 연수 이수 상태 및 상세 현황을 모아보기 위해,<br />왼쪽 <strong className="text-indigo-600">"1단계: 교직원 성명 확인"</strong>에 이름을 기재하고 먼저 인증하십시오.
                           </p>
-                        </div>
-
-                        <div className="pt-2 border-t border-slate-100">
-                          <p className="text-[10px] text-slate-400 text-center font-medium">
-                            또는 아래의 단순 성명 검색을 이용해 이수 상태를 직접 확인하실 수도 있습니다.
-                          </p>
-                          <div className="flex gap-2 mt-3">
-                            <input
-                              type="text"
-                              placeholder="내역 조회용 성명 입력"
-                              value={userSearchTerm}
-                              onChange={(e) => {
-                                setUserSearchTerm(e.target.value);
-                                setUserLookedUp(false);
-                                setVerifiedUserInfo(null);
-                              }}
-                              className="flex-1 text-xs px-3.5 py-2.5 border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-600 bg-white"
-                            />
-                            <button
-                              onClick={lookupMySubmissions}
-                              className="px-4 py-2.5 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold rounded-xl transition-all shrink-0 cursor-pointer"
-                            >
-                              조회
-                            </button>
-                          </div>
-
-                          {userLookedUp && (
-                            <div className="pt-4">
-                              {verifiedUserInfo ? (
-                                <div className="space-y-3">
-                                  <div className="p-3 bg-emerald-50/50 text-emerald-800 border border-emerald-100 rounded-xl text-xs flex items-center justify-between">
-                                    <span>성명: <strong>{verifiedUserInfo.name}</strong> 님 ({verifiedUserInfo.type})</span>
-                                    <span className="text-[10px] font-bold bg-emerald-100 px-1.5 py-0.5 rounded text-emerald-750">매칭됨</span>
-                                  </div>
-                                  <div className="space-y-1.5 max-h-[300px] overflow-y-auto">
-                                    {topics.map(topic => {
-                                      const sub = getSubmissionsForTopic(topic.id).find(s => s.name === verifiedUserInfo.name);
-                                      return (
-                                        <div key={topic.id} className="border border-slate-100 p-2.5 rounded-lg text-xs flex justify-between items-center bg-white">
-                                          <div>
-                                            <div className="font-bold text-slate-800 line-clamp-1">{topic.title}</div>
-                                            <div className="text-[10px] text-slate-400 mt-0.5">시간: {sub ? `${sub.hours}시간` : '-'} | 번호: {sub ? sub.certNumber : '-'}</div>
-                                          </div>
-                                          <div>
-                                            {topic.id === 'topic-statutory-combined' ? (
-                                              (() => {
-                                                const detail = getStatutoryDetailText(sub);
-                                                return (
-                                                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${detail.badgeClass}`}>
-                                                    {detail.label}
-                                                  </span>
-                                                );
-                                              })()
-                                            ) : sub ? (
-                                              <span className="text-[10px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full font-bold">제출됨</span>
-                                            ) : (
-                                              <span className="text-[10px] bg-rose-50 text-rose-500 px-2 py-0.5 rounded-full font-bold">미제출</span>
-                                            )}
-                                          </div>
-                                        </div>
-                                      );
-                                    })}
-                                  </div>
-                                </div>
-                              ) : (
-                                <p className="text-center text-xs text-rose-500 bg-rose-50 p-2.5 rounded-xl border border-rose-100 font-bold">
-                                  ❌ 해당 이름을 가진 분이 진주고 교직원 명렬에 없습니다.
-                                </p>
-                              )}
-                            </div>
-                          )}
                         </div>
                       </div>
                     )}
