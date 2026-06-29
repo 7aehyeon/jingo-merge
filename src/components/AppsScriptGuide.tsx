@@ -65,14 +65,22 @@ function doGet(e) {
       var topics = [];
       for (var i = 1; i < data.length; i++) {
         if (data[i][0]) {
-          topics.push({
-            id: data[i][0],
-            title: data[i][1],
-            content: data[i][2],
-            deadline: data[i][3],
-            sheetCreated: data[i][4] === true || data[i][4] === "true",
-            createdAt: data[i][5]
-          });
+          var title = data[i][1];
+          // 구글 시트에서 개별 연수 시트가 삭제되었는지 실시간 체크 (법정꾸러미는 항상 제외/포함 유지)
+          var sheetName = title.length > 25 ? title.substring(0, 25) + "..." : title;
+          sheetName = sheetName.replace(/[:\\/?*[\\]]/g, "_");
+          var targetSheet = ss.getSheetByName(sheetName);
+          
+          if (data[i][0] === "topic-statutory-combined" || targetSheet) {
+            topics.push({
+              id: data[i][0],
+              title: data[i][1],
+              content: data[i][2],
+              deadline: data[i][3],
+              sheetCreated: true,
+              createdAt: data[i][5]
+            });
+          }
         }
       }
       responseData.data = topics;
@@ -82,6 +90,15 @@ function doGet(e) {
       var submissions = [];
       for (var i = 1; i < data.length; i++) {
         if (data[i][0]) {
+          var rawHours = data[i][6];
+          var hoursVal = 0;
+          // 이수시간 컬럼에 연-월-일(날짜)이 들어가 있는 경우 문자열로 유지
+          if (typeof rawHours === "string" && rawHours.indexOf("-") > -1) {
+            hoursVal = rawHours;
+          } else {
+            hoursVal = Number(rawHours || 0);
+          }
+          
           submissions.push({
             id: data[i][0],
             topicId: data[i][1],
@@ -89,7 +106,7 @@ function doGet(e) {
             type: data[i][3],
             certNumber: data[i][4],
             certDate: data[i][5],
-            hours: Number(data[i][6] || 0),
+            hours: hoursVal,
             method: data[i][7],
             fileName: data[i][8] || "",
             submittedAt: data[i][9],
@@ -263,6 +280,14 @@ function doPost(e) {
         }
       }
       
+      var displayHours = sub.hours;
+      var displayHoursStr = "";
+      if (typeof displayHours === "string" && displayHours.indexOf("-") > -1) {
+        displayHoursStr = displayHours;
+      } else {
+        displayHoursStr = displayHours + "시간";
+      }
+
       var topicRowData = [
         sub.submittedAt,
         postData.topicTitle,
@@ -270,7 +295,7 @@ function doPost(e) {
         sub.type,
         sub.certNumber,
         sub.certDate,
-        sub.hours + "시간",
+        displayHoursStr,
         sub.method === "pdf" ? "PDF 자동추출" : "직접 성명등록"
       ];
       

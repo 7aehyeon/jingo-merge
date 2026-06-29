@@ -126,7 +126,7 @@ const INITIAL_SUBMISSIONS: Submission[] = [
 // [초중요 - 배포 설정] 깃허브(GitHub Pages)에 정적 페이지로 배포 시, 모든 사용자의 브라우저에서 자동 연동이 되도록 
 // 본인의 구글 Apps Script 웹앱 URL(https://script.google.com/macros/s/.../exec) 주소를 아래 빈칸에 직접 붙여넣고 저장하세요.
 // 여기에 URL을 적어두면, 사용자가 사이트에 처음 접속할 때 따로 라이브러리 설정을 누르고 연동할 필요 없이 모든 데이터가 이 구글 시트로 들어가게 됩니다!
-const DEFAULT_APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyaGxcZNsT1InKN9-ePhKRS1gArvyBIpN9_xaC4xU_dFV0E7hMzfBnfx_x2Gyhyj6aK/exec";
+const DEFAULT_APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwt8BdJvwzYO3LXr1eMldsrlUozc1R4w6g-BH1XLLt4lpMqlStBBc7pTL41WE2H5Iuj/exec";
 
 // 브라우저 쿠키/저장소 차단(시크릿 모드/아이프레임 제한 등) 발생 시 크래시 방지를 위한 안전한 로컬스토리지 래퍼
 const inMemoryStorage: Record<string, string> = {};
@@ -296,7 +296,7 @@ export default function App() {
   // Submission details
   const [certNumber, setCertNumber] = useState('');
   const [certDate, setCertDate] = useState('');
-  const [hours, setHours] = useState<number>(15);
+  const [hours, setHours] = useState<number | string>(15);
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [pdfBase64, setPdfBase64] = useState<string>('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -1347,10 +1347,51 @@ export default function App() {
         // 이 개별 연수에 이전에 해당 교직원의 연동 또는 개별 이수 기록이 있었다면 일단 필터링하여 덮어쓰기 처리
         updatedList = updatedList.filter(s => !(s.topicId === topic.id && s.name === activeSub.name));
         
+        let linkedDate = activeSub.certDate;
+        let linkedCertNum = activeSub.certNumber;
+        let linkedHours: string | number = activeSub.hours;
+
+        // 대상 연수명의 타이틀을 분석하여 I과정 또는 II과정에 맞춤 연동
+        const isI = topic.title.includes('I') || topic.title.includes('1') || topic.title.toLowerCase().includes('one');
+        const isII = topic.title.includes('II') || topic.title.includes('2') || topic.title.toLowerCase().includes('two');
+
+        if (activeSub.certDate.includes('/')) {
+          const dates = activeSub.certDate.split('/');
+          const datePart1 = dates[0]?.trim() || '';
+          const datePart2 = dates[1]?.trim() || '';
+
+          const certNums = activeSub.certNumber.includes('/') ? activeSub.certNumber.split('/') : [activeSub.certNumber];
+          const numPart1 = certNums[0]?.trim() || '';
+          const numPart2 = certNums[1]?.trim() || (certNums[0]?.trim() || '');
+
+          if (isI) {
+            linkedDate = datePart1;
+            linkedCertNum = numPart1;
+          } else if (isII) {
+            linkedDate = datePart2;
+            linkedCertNum = numPart2;
+          }
+        } else {
+          // 슬래시가 없는 단일 제출 건인 경우에도 정상 바인딩
+          linkedDate = activeSub.certDate.trim();
+          linkedCertNum = activeSub.certNumber.trim();
+        }
+
+        // 혹시 공백이나 하이픈('-')으로 채워진 빈 값인 경우 비우기 처리
+        if (linkedDate === '-') linkedDate = '';
+        if (linkedCertNum === '-') linkedCertNum = '';
+
+        // "법정연수꾸러미를 연동 시킬때 이수 시간이 연-월-일로만 표기되어서 연동되면 좋겠어"에 따라,
+        // 연동되는 개별 연수의 이수시간(hours) 컬럼에 이수일자(연-월-일)를 기입해 줍니다.
+        linkedHours = linkedDate;
+
         const linkedSub: Submission = {
           ...activeSub,
           id: `linked-${activeSub.id}-${topic.id}-${Date.now()}`,
-          topicId: topic.id
+          topicId: topic.id,
+          certDate: linkedDate,
+          certNumber: linkedCertNum,
+          hours: linkedHours
         };
         
         updatedList.push(linkedSub);
@@ -1606,7 +1647,7 @@ export default function App() {
       const status = sub ? "이수 완료" : "미제출";
       const certNo = sub ? `"${sub.certNumber}"` : "-";
       const certD = sub ? sub.certDate : "-";
-      const hourVal = sub ? `${sub.hours}시간` : "-";
+      const hourVal = sub ? (typeof sub.hours === 'string' && sub.hours.includes('-') ? sub.hours : `${sub.hours}시간`) : "-";
       const typeMethod = sub ? (sub.method === 'pdf' ? "PDF자동추출" : "직접 등록") : "-";
       const timeStr = sub ? sub.submittedAt : "-";
 
@@ -2323,7 +2364,7 @@ export default function App() {
                                     {sub ? sub.certNumber : '-'}
                                   </td>
                                   <td className="p-3">
-                                    {sub ? <span className="font-bold text-slate-800">{sub.hours}시간</span> : '-'}
+                                    {sub ? <span className="font-bold text-slate-800">{typeof sub.hours === 'string' && sub.hours.includes('-') ? sub.hours : `${sub.hours}시간`}</span> : '-'}
                                   </td>
                                 </tr>
                               );
@@ -3521,7 +3562,7 @@ export default function App() {
                                       )}
                                     </div>
                                     <div className="flex gap-2 text-[10px] text-slate-400">
-                                      <span>이수시간: {sub ? <strong className="text-slate-700">{sub.hours}시간</strong> : '-'}</span>
+                                      <span>이수시간: {sub ? <strong className="text-slate-700">{typeof sub.hours === 'string' && sub.hours.includes('-') ? sub.hours : `${sub.hours}시간`}</strong> : '-'}</span>
                                       <span>•</span>
                                       <span>이수번호: {sub ? <span className="font-mono text-slate-600">{sub.certNumber}</span> : '미제출'}</span>
                                       <span>•</span>

@@ -31,7 +31,7 @@ export interface Submission {
   type: EmployeeType;
   certNumber: string; // 이수번호
   certDate: string;   // 이수일자 (YYYY-MM-DD)
-  hours: number;      // 이수시간
+  hours: number | string;      // 이수시간 (시간 단위 숫자 또는 연-월-일 일자 문자열)
   method: 'direct' | 'pdf';
   fileName?: string;
   submittedAt: string;
