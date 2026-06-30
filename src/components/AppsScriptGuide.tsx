@@ -78,7 +78,8 @@ function doGet(e) {
               content: data[i][2],
               deadline: data[i][3],
               sheetCreated: true,
-              createdAt: data[i][5]
+              createdAt: data[i][5],
+              creator: data[i][6] || ""
             });
           }
         }
@@ -165,7 +166,8 @@ function doPost(e) {
         topic.content,
         topic.deadline,
         "true", // sheetCreated
-        topic.createdAt
+        topic.createdAt,
+        topic.creator || ""
       ]);
       
       // 연수별 시트 자동 추가 기능 ★★
@@ -202,11 +204,12 @@ function doPost(e) {
         topic.content,
         topic.deadline,
         "true", // sheetCreated
-        topic.createdAt
+        topic.createdAt,
+        topic.creator || ""
       ];
       if (updateIndex > -1) {
         var oldTitle = rows[updateIndex - 1][1];
-        sheet.getRange(updateIndex, 1, 1, 6).setValues([rowData]);
+        sheet.getRange(updateIndex, 1, 1, 7).setValues([rowData]);
         
         // 시트명 변경
         var oldSheetName = oldTitle.length > 25 ? oldTitle.substring(0, 25) + "..." : oldTitle;
@@ -431,7 +434,7 @@ function setupSheets(ss) {
   var sheetNames = ["교직원명렬", "연수목록", "전체제출현황"];
   var headers = [
     ["ID", "성명", "구분", "소속/부서"],
-    ["ID", "연수명", "상세내용", "마감기한", "시트생성여부", "등록일시"],
+    ["ID", "연수명", "상세내용", "마감기한", "시트생성여부", "등록일시", "담당자"],
     ["ID", "연수ID", "성명", "구분", "이수번호", "이수일자", "이수시간", "제출방식", "파일명", "제출일시", "검증여부"]
   ];
   
@@ -463,7 +466,8 @@ function setupSheets(ss) {
         <div className="text-xs text-amber-800 leading-relaxed space-y-1.5 font-medium">
           <p>
             웹앱의 [개설 완료 목록]에서 연수를 지웠을 때 구글 시트에서도 <strong>자동으로 행과 개별 시트가 실시간 동시 제거</strong>되고, 
-            반대로 구글 시트에서 사용자가 직접 특정 연수 행이나 시트 탭을 삭제했을 때 웹앱에서도 <strong>자동으로 개설 완료 목록에서 완벽하게 제외(실시간 양방향 싱크)</strong>되도록 기능이 대폭 업그레이드되었습니다.
+            반대로 구글 시트에서 사용자가 직접 특정 연수 행이나 시트 탭을 삭제했을 때 웹앱에서도 <strong>자동으로 개설 완료 목록에서 완벽하게 제외(실시간 양방향 싱크)</strong>되도록 기능이 대폭 업그레이드되었습니다. 
+            또한, 입력하신 <strong>[담당 부서 및 담당자명] 역시 구글 스프레드시트에 실시간으로 완벽 저장</strong>되어, 새로고침해도 데이터가 날아가지 않고 모든 사용자에게 실시간으로 동기화되어 나타납니다.
           </p>
           <div className="bg-white/70 rounded-lg p-3 border border-amber-200/50 space-y-1 text-[11px] text-amber-950 leading-normal">
             <p className="font-bold">💡 실시간 연동을 위해 반드시 조치해 주세요:</p>

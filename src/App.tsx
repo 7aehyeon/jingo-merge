@@ -126,7 +126,7 @@ const INITIAL_SUBMISSIONS: Submission[] = [
 // [초중요 - 배포 설정] 깃허브(GitHub Pages)에 정적 페이지로 배포 시, 모든 사용자의 브라우저에서 자동 연동이 되도록 
 // 본인의 구글 Apps Script 웹앱 URL(https://script.google.com/macros/s/.../exec) 주소를 아래 빈칸에 직접 붙여넣고 저장하세요.
 // 여기에 URL을 적어두면, 사용자가 사이트에 처음 접속할 때 따로 라이브러리 설정을 누르고 연동할 필요 없이 모든 데이터가 이 구글 시트로 들어가게 됩니다!
-const DEFAULT_APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwC6kU-XA1bQBxr-oPILDV4FeL6RPagv48XDNbH6JiNsRnRPe5JqHWvxBvEE8dACzko/exec";
+const DEFAULT_APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyEEhxqFUh2qWM5JOzuSnM9JIUHkgJ-AWCe1-6Vlso88xIr75WRCg7UqQx7NcngqXFJ/exec";
 
 // 브라우저 쿠키/저장소 차단(시크릿 모드/아이프레임 제한 등) 발생 시 크래시 방지를 위한 안전한 로컬스토리지 래퍼
 const inMemoryStorage: Record<string, string> = {};
@@ -1391,6 +1391,54 @@ export default function App() {
     }
   };
 
+  // 날짜 문자열을 YYYY-MM-DD 형식으로 깨끗하게 포맷팅해 주는 도우미 함수
+  const formatDateToYYYYMMDD = (dateStr: string): string => {
+    if (!dateStr) return '';
+    
+    // 만약 슬래시(/)나 쉼표(,), 앰퍼샌드(&) 등으로 결합된 복수 날짜 문자열인 경우, 각각 파싱 후 다시 결합합니다.
+    if (dateStr.includes('/')) {
+      return dateStr.split('/')
+        .map(part => formatDateToYYYYMMDD(part.trim()))
+        .join(' / ');
+    }
+    
+    let target = dateStr.trim();
+    
+    // ISO 8601 형식 (e.g. 2026-06-17T15:00:00.000Z) 처리
+    if (target.includes('T')) {
+      const onlyDate = target.split('T')[0];
+      if (/^\d{4}-\d{2}-\d{2}$/.test(onlyDate)) {
+        return onlyDate;
+      }
+    }
+    
+    // 일반적인 날짜 파싱 시도
+    try {
+      const d = new Date(target);
+      if (!isNaN(d.getTime())) {
+        const yyyy = d.getFullYear();
+        const mm = String(d.getMonth() + 1).padStart(2, '0');
+        const dd = String(d.getDate()).padStart(2, '0');
+        return `${yyyy}-${mm}-${dd}`;
+      }
+    } catch (e) {
+      // 무시
+    }
+    
+    // 만약 '2026. 06. 17' 이나 '2026.06.17.' 같은 포맷이 들어오는 경우 정규화
+    // 점(.)을 하이픈(-)으로 대체하기
+    const dotRegex = /^(\d{4})[.-]\s*(\d{1,2})[.-]\s*(\d{1,2})[.]?$/;
+    const match = target.match(dotRegex);
+    if (match) {
+      const yyyy = match[1];
+      const mm = match[2].padStart(2, '0');
+      const dd = match[3].padStart(2, '0');
+      return `${yyyy}-${mm}-${dd}`;
+    }
+
+    return target;
+  };
+
   // 법정의무연수 꾸러미 상호 실시간 자동 연동 함수 (I, II ↔ 통합)
   const syncStatutorySubmissions = (currentSubmissions: Submission[], activeSub: Submission): { updatedList: Submission[]; extraProcessed: { sub: Submission; topicTitle: string }[] } => {
     const extraProcessed: { sub: Submission; topicTitle: string }[] = [];
@@ -1438,6 +1486,9 @@ export default function App() {
         // 혹시 공백이나 하이픈('-')으로 채워진 빈 값인 경우 비우기 처리
         if (linkedDate === '-') linkedDate = '';
         if (linkedCertNum === '-') linkedCertNum = '';
+
+        // 날짜를 YYYY-MM-DD 형식으로 깨끗이 정리합니다.
+        linkedDate = formatDateToYYYYMMDD(linkedDate);
 
         // "법정연수꾸러미를 연동 시킬때 이수 시간이 연-월-일로만 표기되어서 연동되면 좋겠어"에 따라,
         // 연동되는 개별 연수의 이수시간(hours) 컬럼에 이수일자(연-월-일)를 기입해 줍니다.
@@ -1558,6 +1609,9 @@ export default function App() {
         finalHours = 25;
       }
     }
+
+    // 최종 이수일자를 YYYY-MM-DD (또는 복수일 경우 각각 YYYY-MM-DD) 형식으로 깔끔하게 정규화
+    finalCertDate = formatDateToYYYYMMDD(finalCertDate);
 
     const newSub: Submission = {
       id: 'sub-' + Date.now(),
@@ -2283,11 +2337,16 @@ export default function App() {
                     <>
                       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pb-3 border-b border-slate-100">
                         <div>
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <h4 className="text-sm font-bold text-slate-800 line-clamp-1">{activeTopic.title}</h4>
                             <span className="text-[10px] bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded font-bold font-mono">
                               {activeSubCount}/{activeTargetCount}명 이수 대상
                             </span>
+                            {activeTopic.creator && (
+                              <span className="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200/60 px-2 py-0.5 rounded font-bold flex items-center gap-0.5">
+                                👤 담당: {activeTopic.creator}
+                              </span>
+                            )}
                           </div>
                           <p className="text-xs text-slate-400 mt-1 leading-normal">{activeTopic.content}</p>
                         </div>
@@ -3620,12 +3679,18 @@ export default function App() {
                                         </span>
                                       )}
                                     </div>
-                                    <div className="flex gap-2 text-[10px] text-slate-400">
+                                    <div className="flex gap-2 text-[10px] text-slate-400 flex-wrap">
                                       <span>이수시간: {sub ? <strong className="text-slate-700">{typeof sub.hours === 'string' && sub.hours.includes('-') ? sub.hours : `${sub.hours}시간`}</strong> : '-'}</span>
                                       <span>•</span>
                                       <span>이수번호: {sub ? <span className="font-mono text-slate-600">{sub.certNumber}</span> : '미제출'}</span>
                                       <span>•</span>
                                       <span>기한: ~ {formatDeadline(topic.deadline)}</span>
+                                      {topic.creator && (
+                                        <>
+                                          <span>•</span>
+                                          <span className="text-emerald-700 font-semibold bg-emerald-50/50 border border-emerald-100 px-1.5 py-0.2 rounded">👤 담당: {topic.creator}</span>
+                                        </>
+                                      )}
                                     </div>
                                   </div>
 
