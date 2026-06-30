@@ -227,6 +227,43 @@ function doPost(e) {
         responseData.message = "연수 정보가 등록되었습니다.";
       }
       
+    } else if (action === "deleteTopic") {
+      var topic = postData.topic;
+      var topicId = topic.id;
+      var topicTitle = topic.title;
+
+      // 1. "연수목록" 시트에서 해당 연수 삭제
+      var listSheet = ss.getSheetByName("연수목록");
+      if (listSheet) {
+        var rows = listSheet.getDataRange().getValues();
+        for (var i = rows.length - 1; i >= 1; i--) {
+          if (rows[i][0] === topicId) {
+            listSheet.deleteRow(i + 1);
+          }
+        }
+      }
+
+      // 2. "전체제출현황" 시트에서 해당 연수ID를 가진 제출 내역들 삭제
+      var submissionsSheet = ss.getSheetByName("전체제출현황");
+      if (submissionsSheet) {
+        var subRows = submissionsSheet.getDataRange().getValues();
+        for (var i = subRows.length - 1; i >= 1; i--) {
+          if (subRows[i][1] === topicId) {
+            submissionsSheet.deleteRow(i + 1);
+          }
+        }
+      }
+
+      // 3. 해당 연수의 개별 시트 삭제
+      var newSheetName = topicTitle.length > 25 ? topicTitle.substring(0, 25) + "..." : topicTitle;
+      newSheetName = newSheetName.replace(/[:\\/?*[\\]]/g, "_");
+      var targetSheet = ss.getSheetByName(newSheetName);
+      if (targetSheet) {
+        ss.deleteSheet(targetSheet);
+      }
+
+      responseData.message = "연수 및 이수 제출 시트 삭제 완료!";
+      
     } else if (action === "submitCertificate") {
       var submissionsSheet = ss.getSheetByName("전체제출현황");
       var sub = postData.submission;
@@ -418,6 +455,36 @@ function setupSheets(ss) {
 
   return (
     <div className="space-y-6">
+      {/* ⚠️ 실시간 동기화 및 연수 삭제 연동 관련 핵심 안내 배너 */}
+      <div className="bg-amber-50 border border-amber-200 rounded-xl p-5 space-y-3">
+        <h4 className="font-bold text-amber-900 text-sm flex items-center gap-2">
+          <span className="text-base">⚠️</span> 실시간 연수 삭제 및 구글 시트 양방향 연동 필독 안내
+        </h4>
+        <div className="text-xs text-amber-800 leading-relaxed space-y-1.5 font-medium">
+          <p>
+            웹앱의 [개설 완료 목록]에서 연수를 지웠을 때 구글 시트에서도 <strong>자동으로 행과 개별 시트가 실시간 동시 제거</strong>되고, 
+            반대로 구글 시트에서 사용자가 직접 특정 연수 행이나 시트 탭을 삭제했을 때 웹앱에서도 <strong>자동으로 개설 완료 목록에서 완벽하게 제외(실시간 양방향 싱크)</strong>되도록 기능이 대폭 업그레이드되었습니다.
+          </p>
+          <div className="bg-white/70 rounded-lg p-3 border border-amber-200/50 space-y-1 text-[11px] text-amber-950 leading-normal">
+            <p className="font-bold">💡 실시간 연동을 위해 반드시 조치해 주세요:</p>
+            <ol className="list-decimal list-inside space-y-1 ml-1 font-semibold">
+              <li>
+                기존에 생성하셨던 구글 스프레드시트 상단 메뉴의 <span className="text-indigo-700 font-bold">확장 프로그램 &gt; Apps Script</span>로 들어갑니다.
+              </li>
+              <li>
+                기존 코드를 지우고, 아래 검은색 박스에 있는 <span className="text-indigo-700 font-bold">[전체 코드 복사]</span> 버튼을 클릭하여 새 코드로 전체 덮어쓰기(수정) 합니다. (새 코드에는 <span className="underline font-bold text-rose-700">deleteTopic</span> 등 삭제 연동 기능이 완벽하게 포함되어 있습니다)
+              </li>
+              <li>
+                <strong>[가장 중요]</strong> 코드 수정 후 상단 메뉴의 <span className="font-extrabold text-indigo-700 bg-indigo-50 px-1 py-0.5 rounded">배포 &gt; 배포 관리</span>를 누르고, 우측 연필(편집) 아이콘을 누른 뒤, 버전을 반드시 <span className="font-extrabold text-rose-700">새 버전(New Version)</span>으로 변경 후 <span className="font-bold bg-indigo-600 text-white px-1.5 py-0.5 rounded text-[10px]">배포</span> 버튼을 클릭해야 구글 서버에 최종 적용됩니다!
+              </li>
+              <li className="text-rose-700">
+                웹앱에서 삭제 시, 이제 구글 시트의 처리가 완전히 끝날 때까지 <strong>"실시간 데이터 처리 중" 로딩 바가 정확히 지속</strong>되며, 삭제가 끝난 후 자동으로 최신 목록을 구글에서 다시 조회해와 화면에 100% 일치하게 반영(Sync)합니다.
+              </li>
+            </ol>
+          </div>
+        </div>
+      </div>
+
       <div className="bg-white rounded-xl border border-slate-200/80 p-6 shadow-sm">
         <div className="flex items-start gap-4">
           <div className="p-3 bg-indigo-50 text-indigo-600 rounded-lg">

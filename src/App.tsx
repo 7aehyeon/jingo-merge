@@ -829,17 +829,28 @@ export default function App() {
 
       let updated = false;
 
-      if (rosterJson.success && rosterJson.data && rosterJson.data.length > 0) {
+      if (rosterJson.success && rosterJson.data && Array.isArray(rosterJson.data)) {
         setRoster(rosterJson.data);
         safeLocalStorage.setItem('jj_roster', JSON.stringify(rosterJson.data));
         updated = true;
       }
-      if (topicsJson.success && topicsJson.data && topicsJson.data.length > 0) {
-        setTopics(topicsJson.data);
-        safeLocalStorage.setItem('jj_topics', JSON.stringify(topicsJson.data));
+      if (topicsJson.success && topicsJson.data && Array.isArray(topicsJson.data)) {
+        let fetchedTopics = [...topicsJson.data];
+        if (!fetchedTopics.some((t: any) => t.id === 'topic-statutory-combined')) {
+          fetchedTopics.push({
+            id: 'topic-statutory-combined',
+            title: '2026학년도 법정의무연수 꾸러미 과정',
+            content: '교원 대상 법정의무연수 통합 꾸러미 과정 (I 과정, II 과정 개별 또는 통합/동시 제출 지원 및 일괄 자동 연동)',
+            deadline: '2026-08-31',
+            sheetCreated: true,
+            createdAt: '2026-06-22',
+          });
+        }
+        setTopics(fetchedTopics);
+        safeLocalStorage.setItem('jj_topics', JSON.stringify(fetchedTopics));
         updated = true;
       }
-      if (subsJson.success && subsJson.data) {
+      if (subsJson.success && subsJson.data && Array.isArray(subsJson.data)) {
         setSubmissions(subsJson.data);
         safeLocalStorage.setItem('jj_submissions', JSON.stringify(subsJson.data));
         updated = true;
@@ -927,6 +938,7 @@ export default function App() {
     // Auto sync if Sheets connected
     if (appsScriptUrl) {
       setIsSyncing(true);
+      setLoadingMessage(`🆕 구글 시트에 신규 연수 '${newTopic.title}' 전용 시트를 생성하고 있습니다...`);
       try {
         // 1. 신규 토픽 시트 생성
         await fetch(appsScriptUrl, {
@@ -941,7 +953,9 @@ export default function App() {
 
         // 2. 만약 기존의 복제 연동할 이수 데이터가 있다면, 신규 시트에도 POST하여 저장한다.
         if (extraSubsToCreate.length > 0) {
-          for (const extSub of extraSubsToCreate) {
+          for (let idx = 0; idx < extraSubsToCreate.length; idx++) {
+            const extSub = extraSubsToCreate[idx];
+            setLoadingMessage(`🆕 연동할 기존 이수 이력을 복제 전송 중... (${idx + 1}/${extraSubsToCreate.length})`);
             await fetch(appsScriptUrl, {
               method: 'POST',
               mode: 'no-cors',
@@ -958,8 +972,10 @@ export default function App() {
         setCreationMessage(`🎉 신규 연수 개설 및 스프레드시트에 전용 시트('${newTopic.title.substring(0, 15)}')가 동시 자동 추가되었습니다!${extraSubsToCreate.length > 0 ? ` (기존 꾸러미 이수 내역 ${extraSubsToCreate.length}건 동시 자동 연동 완료)` : ''}`);
       } catch (err) {
         console.error("Failed to sync new topic online:", err);
+      } finally {
+        setIsSyncing(false);
+        setLoadingMessage('');
       }
-      setIsSyncing(false);
     }
 
     setSelectedTopicId(newTopic.id);
@@ -993,6 +1009,7 @@ export default function App() {
     // Apps Script Sync
     if (appsScriptUrl) {
       setIsSyncing(true);
+      setLoadingMessage(`📝 구글 시트에서 연수 '${updatedTopic.title}' 정보를 수정하고 있습니다...`);
       try {
         await fetch(appsScriptUrl, {
           method: 'POST',
@@ -1005,8 +1022,49 @@ export default function App() {
         });
       } catch (err) {
         console.error("Failed to sync edited topic online:", err);
+      } finally {
+        setIsSyncing(false);
+        setLoadingMessage('');
       }
-      setIsSyncing(false);
+    }
+  };
+
+  const handleDeleteTopic = async (topic: TrainingTopic) => {
+    if (!confirm(`⚠️ 정말로 연수 '${topic.title}' 과정을 취합 목록에서 삭제하시겠습니까?\n삭제 시 해당 연수에 제출된 모든 교직원 이수 내역(스프레드시트 내 개별 시트 포함)이 실시간으로 동시 삭제됩니다.`)) {
+      return;
+    }
+
+    // 1. 로컬 상태 업데이트
+    setTopics(prev => prev.filter(t => t.id !== topic.id));
+    setSubmissions(prev => prev.filter(s => s.topicId !== topic.id));
+    showAlert(`🗑️ 연수 '${topic.title}' 과정이 목록에서 제거되었습니다.`, 'success');
+
+    // 2. 구글 스프레드시트 동기화
+    if (appsScriptUrl) {
+      setIsSyncing(true);
+      setLoadingMessage(`🗑️ 구글 시트에서 연수 '${topic.title}' 관련 데이터 및 시트 탭을 삭제하고 동기화하는 중입니다...`);
+      try {
+        await fetch(appsScriptUrl, {
+          method: 'POST',
+          mode: 'no-cors',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'deleteTopic',
+            topic: topic
+          })
+        });
+        showAlert(`🗑️ 구글 스프레드시트에서 연수 및 제출 시트가 정상적으로 동시 삭제 처리되었습니다.`, 'success');
+        
+        // 지운 뒤, 구글 시트 원격 서버의 최신 데이터를 한 번 더 Pull해와서 100% 완벽한 실시간 싱크 상태를 웹앱에 덮어씌웁니다.
+        setLoadingMessage('🔄 최신 데이터 및 연수 목록을 구글 스프레드시트와 실시간 연동하고 있습니다...');
+        await pullDataFromGoogleSheets(true);
+      } catch (err) {
+        console.error("Failed to sync deleted topic online:", err);
+        showAlert(`구글 시트 삭제 처리 중 실패했습니다.`, 'error');
+      } finally {
+        setIsSyncing(false);
+        setLoadingMessage('');
+      }
     }
   };
 
@@ -1564,6 +1622,7 @@ export default function App() {
     // Trigger POST payload into Google spreadsheet Apps Script API for all updated/linked records
     if (appsScriptUrl) {
       setIsSyncing(true);
+      setLoadingMessage('📝 제출된 이수 내역을 구글 스프레드시트에 실시간 전송하여 기록하는 중입니다...');
       try {
         // Post main submission
         await fetch(appsScriptUrl, {
@@ -1578,7 +1637,9 @@ export default function App() {
         });
 
         // Post extra synchronized submissions (like individual course parts or unified)
-        for (const item of extraProcessed) {
+        for (let idx = 0; idx < extraProcessed.length; idx++) {
+          const item = extraProcessed[idx];
+          setLoadingMessage(`📝 연계된 추가 이수 내역을 전송하고 있습니다 (${idx + 1}/${extraProcessed.length}): ${item.topicTitle}`);
           await fetch(appsScriptUrl, {
             method: 'POST',
             mode: 'no-cors',
@@ -1592,8 +1653,10 @@ export default function App() {
         }
       } catch (e) {
         console.error('Remote sheets submit error:', e);
+      } finally {
+        setIsSyncing(false);
+        setLoadingMessage('');
       }
-      setIsSyncing(false);
     }
 
     setTimeout(() => {
@@ -2626,11 +2689,7 @@ export default function App() {
                                   <Edit2 className="w-3.5 h-3.5" />
                                 </button>
                                 <button
-                                  onClick={() => {
-                                    if (confirm('해당 연수를 취합 목록에서 제거합니까? 기제출 자료들도 비활성화 됩니다.')) {
-                                      setTopics(topics.filter(t => t.id !== topic.id));
-                                    }
-                                  }}
+                                  onClick={() => handleDeleteTopic(topic)}
                                   className="text-slate-300 hover:text-rose-500 transition-colors p-1 cursor-pointer"
                                   title="삭제"
                                 >
