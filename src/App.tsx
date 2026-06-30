@@ -3650,67 +3650,88 @@ export default function App() {
                               const isSelected = selectedStaffTopicId === topic.id;
                               
                               return (
-                                <button
+                                <div
                                   key={topic.id}
-                                  type="button"
-                                  disabled={!isEligible}
-                                  onClick={() => setSelectedStaffTopicId(topic.id)}
-                                  className={`w-full text-left p-3.5 rounded-xl text-xs flex justify-between items-center transition-all border ${
+                                  className={`w-full rounded-xl transition-all border ${
                                     isEligible
                                       ? isSelected
-                                        ? 'border-indigo-500 bg-indigo-50/30 ring-1 ring-indigo-500 shadow-sm font-bold cursor-pointer'
-                                        : 'border-slate-100 bg-white hover:border-slate-200 cursor-pointer hover:bg-slate-50/40'
-                                      : 'border-slate-100 bg-slate-50/50 opacity-60 cursor-not-allowed'
+                                        ? 'border-indigo-500 bg-indigo-50/20 ring-1 ring-indigo-500 shadow-sm'
+                                        : 'border-slate-100 bg-white hover:border-slate-200 hover:bg-slate-50/40'
+                                      : 'border-slate-100 bg-slate-50/50 opacity-60'
                                   }`}
                                 >
-                                  <div className="space-y-1.5 pr-4 flex-1">
-                                    <div className="flex items-center gap-1.5 flex-wrap">
-                                      <h5 className={`font-bold text-slate-800 line-clamp-1 ${isSelected ? 'text-indigo-900 font-extrabold' : ''}`}>
-                                        {topic.title}
-                                      </h5>
-                                      {!isEligible && (
-                                        <span className="text-[9px] bg-slate-200 text-slate-500 font-bold px-1.5 py-0.2 rounded shrink-0">
-                                          대상 제외
-                                        </span>
-                                      )}
-                                      {isSelected && (
-                                        <span className="text-[9px] bg-indigo-600 text-white font-bold px-1.5 py-0.2 rounded shrink-0 animate-pulse">
-                                          작성 중
-                                        </span>
-                                      )}
+                                  <button
+                                    type="button"
+                                    disabled={!isEligible}
+                                    onClick={() => setSelectedStaffTopicId(topic.id)}
+                                    className={`w-full text-left p-3.5 text-xs flex justify-between items-center ${
+                                      isEligible ? 'cursor-pointer' : 'cursor-not-allowed'
+                                    }`}
+                                  >
+                                    <div className="space-y-1.5 pr-4 flex-1">
+                                      <div className="flex items-center gap-1.5 flex-wrap">
+                                        <h5 className={`font-bold text-slate-800 line-clamp-1 ${isSelected ? 'text-indigo-900 font-extrabold' : ''}`}>
+                                          {topic.title}
+                                        </h5>
+                                        {!isEligible && (
+                                          <span className="text-[9px] bg-slate-200 text-slate-500 font-bold px-1.5 py-0.2 rounded shrink-0">
+                                            대상 제외
+                                          </span>
+                                        )}
+                                        {isSelected && (
+                                          <span className="text-[9px] bg-indigo-600 text-white font-bold px-1.5 py-0.2 rounded shrink-0 animate-pulse">
+                                            작성 중
+                                          </span>
+                                        )}
+                                      </div>
+                                      <div className="flex gap-2 text-[10px] text-slate-400 flex-wrap">
+                                        <span>이수시간: {sub ? <strong className="text-slate-700">{typeof sub.hours === 'string' && sub.hours.includes('-') ? sub.hours : `${sub.hours}시간`}</strong> : '-'}</span>
+                                        <span>•</span>
+                                        <span>이수번호: {sub ? <span className="font-mono text-slate-600">{sub.certNumber}</span> : '미제출'}</span>
+                                        <span>•</span>
+                                        <span>기한: ~ {formatDeadline(topic.deadline)}</span>
+                                        {topic.creator && (
+                                          <>
+                                            <span>•</span>
+                                            <span className="text-emerald-700 font-semibold bg-emerald-50/50 border border-emerald-100 px-1.5 py-0.2 rounded">👤 담당: {topic.creator}</span>
+                                          </>
+                                        )}
+                                      </div>
                                     </div>
-                                    <div className="flex gap-2 text-[10px] text-slate-400 flex-wrap">
-                                      <span>이수시간: {sub ? <strong className="text-slate-700">{typeof sub.hours === 'string' && sub.hours.includes('-') ? sub.hours : `${sub.hours}시간`}</strong> : '-'}</span>
-                                      <span>•</span>
-                                      <span>이수번호: {sub ? <span className="font-mono text-slate-600">{sub.certNumber}</span> : '미제출'}</span>
-                                      <span>•</span>
-                                      <span>기한: ~ {formatDeadline(topic.deadline)}</span>
-                                      {topic.creator && (
-                                        <>
-                                          <span>•</span>
-                                          <span className="text-emerald-700 font-semibold bg-emerald-50/50 border border-emerald-100 px-1.5 py-0.2 rounded">👤 담당: {topic.creator}</span>
-                                        </>
-                                      )}
-                                    </div>
-                                  </div>
 
-                                  <div className="shrink-0 pl-1">
-                                    {sub ? (
-                                      <span className="text-[10.5px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-100 px-2.5 py-1.5 rounded-full flex items-center gap-1 shadow-2xs">
-                                        <CheckCircle className="w-3.5 h-3.5 text-emerald-500" />
-                                        <span>제출 완료 (수정 가능)</span>
-                                      </span>
-                                    ) : (
-                                      isEligible ? (
-                                        <span className="text-[10.5px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-100 px-2.5 py-1.5 rounded-full flex items-center gap-1 shadow-2xs">
-                                          <span>미제출 (등록하기)</span>
+                                    <div className="shrink-0 pl-1">
+                                      {sub ? (
+                                        <span className="text-[10.5px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-100 px-2.5 py-1.5 rounded-full flex items-center gap-1 shadow-2xs">
+                                          <CheckCircle className="w-3.5 h-3.5 text-emerald-500" />
+                                          <span>제출 완료 (수정 가능)</span>
                                         </span>
                                       ) : (
-                                        <span className="text-[10px] text-slate-400 font-medium">제출불가</span>
-                                      )
-                                    )}
-                                  </div>
-                                </button>
+                                        isEligible ? (
+                                          <span className="text-[10.5px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-100 px-2.5 py-1.5 rounded-full flex items-center gap-1 shadow-2xs">
+                                            <span>미제출 (등록하기)</span>
+                                          </span>
+                                        ) : (
+                                          <span className="text-[10px] text-slate-400 font-medium">제출불가</span>
+                                        )
+                                      )}
+                                    </div>
+                                  </button>
+
+                                  {/* 선택되었을 때 보여줄 상세 내용 및 범위 안내 (아코디언) */}
+                                  {isSelected && topic.content && (
+                                    <div className="px-3.5 pb-3.5 pt-0.5 animate-in slide-in-from-top-1 duration-200">
+                                      <div className="bg-slate-50/80 p-3 rounded-lg border border-slate-100/80 space-y-1">
+                                        <div className="flex items-center gap-1.5 text-[10px] font-bold text-indigo-700">
+                                          <Info className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                                          <span>상세 연수 내용 및 범위 안내</span>
+                                        </div>
+                                        <p className="text-[10.5px] text-slate-600 whitespace-pre-wrap leading-relaxed font-normal">
+                                          {topic.content}
+                                        </p>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
                               );
                             })}
                           </div>
