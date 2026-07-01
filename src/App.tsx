@@ -126,7 +126,7 @@ const INITIAL_SUBMISSIONS: Submission[] = [
 // [초중요 - 배포 설정] 깃허브(GitHub Pages)에 정적 페이지로 배포 시, 모든 사용자의 브라우저에서 자동 연동이 되도록 
 // 본인의 구글 Apps Script 웹앱 URL(https://script.google.com/macros/s/.../exec) 주소를 아래 빈칸에 직접 붙여넣고 저장하세요.
 // 여기에 URL을 적어두면, 사용자가 사이트에 처음 접속할 때 따로 라이브러리 설정을 누르고 연동할 필요 없이 모든 데이터가 이 구글 시트로 들어가게 됩니다!
-const DEFAULT_APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyEEhxqFUh2qWM5JOzuSnM9JIUHkgJ-AWCe1-6Vlso88xIr75WRCg7UqQx7NcngqXFJ/exec";
+const DEFAULT_APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbz1CefXw9n4V_c0E0GRFrRkE0A0RdcdY-mOmK6vXLTIo9Lpy6Qx0yQbGkWPndd1CC29/exec";
 
 // 브라우저 쿠키/저장소 차단(시크릿 모드/아이프레임 제한 등) 발생 시 크래시 방지를 위한 안전한 로컬스토리지 래퍼
 const inMemoryStorage: Record<string, string> = {};
@@ -247,6 +247,7 @@ export default function App() {
   const [editContent, setEditContent] = useState('');
   const [editDeadline, setEditDeadline] = useState('');
   const [editCreator, setEditCreator] = useState('');
+  const [editTargets, setEditTargets] = useState<string[]>([]);
 
   // Roster addition States
   const [newMemberName, setNewMemberName] = useState('');
@@ -342,8 +343,11 @@ export default function App() {
   const getStatutoryDetailText = (sub: Submission | undefined) => {
     if (!sub) return { label: '미제출', textClass: 'text-slate-400', badgeClass: 'bg-slate-150 hover:bg-slate-200 text-slate-500' };
     
-    if (sub.hours === 25 && !(sub.certNumber && sub.certNumber.includes('/'))) {
-      return { label: '통합 과정 제출 (25시간)', textClass: 'text-indigo-600', badgeClass: 'bg-indigo-100 text-indigo-800 border border-indigo-200 font-bold' };
+    const isGeneralOrGov = sub.type === '일반직' || sub.type === '교육공무직';
+    const totalH = isGeneralOrGov ? 19 : 25;
+
+    if ((sub.hours === totalH || sub.hours === 19 || sub.hours === 25) && !(sub.certNumber && sub.certNumber.includes('/'))) {
+      return { label: `통합 과정 제출 (${totalH}시간)`, textClass: 'text-indigo-600', badgeClass: 'bg-indigo-100 text-indigo-800 border border-indigo-200 font-bold' };
     }
     
     if (sub.certNumber && sub.certNumber.includes('/')) {
@@ -355,15 +359,15 @@ export default function App() {
       const hasII = numII !== '' && numII !== '-';
       
       if (hasI && hasII) {
-        return { label: 'I & II 과정 모두 이수 (25시간)', textClass: 'text-emerald-600', badgeClass: 'bg-emerald-100 text-emerald-800 border border-emerald-200 font-bold' };
+        return { label: `I & II 과정 모두 이수 (${totalH}시간)`, textClass: 'text-emerald-600', badgeClass: 'bg-emerald-100 text-emerald-800 border border-emerald-200 font-bold' };
       } else if (hasI) {
         return { label: 'I 과정만 제출 (12시간)', textClass: 'text-sky-600', badgeClass: 'bg-sky-100 text-sky-800 border border-sky-200 font-bold' };
       } else if (hasII) {
         return { label: 'II 과정만 제출 (13시간)', textClass: 'text-amber-600', badgeClass: 'bg-amber-100 text-amber-900 border border-amber-200 font-bold' };
       }
     } else {
-      if (sub.hours === 25 || sub.hours === 30) {
-        return { label: 'I & II 과정 모두 이수 (25시간)', textClass: 'text-emerald-600', badgeClass: 'bg-emerald-100 text-emerald-800 border border-emerald-200 font-bold' };
+      if (sub.hours === totalH || sub.hours === 25 || sub.hours === 30 || sub.hours === 19) {
+        return { label: `I & II 과정 모두 이수 (${totalH}시간)`, textClass: 'text-emerald-600', badgeClass: 'bg-emerald-100 text-emerald-800 border border-emerald-200 font-bold' };
       }
       if (sub.hours === 13) {
         return { label: 'II 과정만 제출 (13시간)', textClass: 'text-amber-600', badgeClass: 'bg-amber-100 text-amber-900 border border-amber-200 font-bold' };
@@ -509,16 +513,18 @@ export default function App() {
 
   // Synchronize hours input when statutoryCourseMode changes
   useEffect(() => {
+    const isGeneralOrGov = matchedStaff?.type === '일반직' || matchedStaff?.type === '교육공무직';
+    const defaultTotalH = isGeneralOrGov ? 19 : 25;
     if (statutoryCourseMode === 'I') {
       setHours(12);
     } else if (statutoryCourseMode === 'II') {
       setHours(13);
     } else if (statutoryCourseMode === 'both') {
-      setHours(25);
+      setHours(defaultTotalH);
     } else if (statutoryCourseMode === 'combined') {
-      setHours(25);
+      setHours(defaultTotalH);
     }
-  }, [statutoryCourseMode]);
+  }, [statutoryCourseMode, matchedStaff]);
 
   // User-specific lookup state
   const [userSearchTerm, setUserSearchTerm] = useState('');
@@ -998,6 +1004,7 @@ export default function App() {
       content: editContent.trim(),
       deadline: editDeadline,
       creator: editCreator.trim() || undefined,
+      targets: editTargets,
     };
 
     // Update locally
@@ -1020,6 +1027,9 @@ export default function App() {
             topic: updatedTopic
           })
         });
+        
+        // 원활한 전역 실시간 반영을 위한 동기화 재호출
+        await pullDataFromGoogleSheets(true);
       } catch (err) {
         console.error("Failed to sync edited topic online:", err);
       } finally {
@@ -1583,6 +1593,9 @@ export default function App() {
         }
       }
 
+      const isGeneralOrGov = matchedStaff?.type === '일반직' || matchedStaff?.type === '교육공무직';
+      const defaultTotalH = isGeneralOrGov ? 19 : 25;
+
       if (statutoryCourseMode === 'I') {
         const numI = certNumberI.trim();
         const dateI = certDateI;
@@ -1590,7 +1603,7 @@ export default function App() {
         const dateII = existingII_date && existingII_date !== '-' ? existingII_date : '-';
         finalCertNumber = `${numI} / ${numII}`;
         finalCertDate = `${dateI} / ${dateII}`;
-        finalHours = (numII !== '-') ? 25 : 12;
+        finalHours = (numII !== '-') ? defaultTotalH : 12;
       } else if (statutoryCourseMode === 'II') {
         const numI = existingI_num && existingI_num !== '-' ? existingI_num : '-';
         const dateI = existingI_date && existingI_date !== '-' ? existingI_date : '-';
@@ -1598,15 +1611,15 @@ export default function App() {
         const dateII = certDateII;
         finalCertNumber = `${numI} / ${numII}`;
         finalCertDate = `${dateI} / ${dateII}`;
-        finalHours = (numI !== '-') ? 25 : 13;
+        finalHours = (numI !== '-') ? defaultTotalH : 13;
       } else if (statutoryCourseMode === 'both') {
         finalCertNumber = `${certNumberI.trim()} / ${certNumberII.trim()}`;
         finalCertDate = `${certDateI} / ${certDateII}`;
-        finalHours = 25;
+        finalHours = defaultTotalH;
       } else if (statutoryCourseMode === 'combined') {
         finalCertNumber = certNumber.trim();
         finalCertDate = certDate;
-        finalHours = 25;
+        finalHours = defaultTotalH;
       }
     }
 
@@ -2004,10 +2017,10 @@ export default function App() {
       {/* Topic Edit Modal */}
       {editingTopic && (
         <div className="fixed inset-0 bg-slate-900/45 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in">
-          <div className="bg-white w-full max-w-md rounded-2xl p-6.5 shadow-2xl relative border-t-4 border-indigo-600 animate-in zoom-in duration-200">
+          <div className="bg-white w-full max-w-lg rounded-2xl p-6.5 shadow-2xl relative border-t-4 border-indigo-600 animate-in zoom-in duration-200 max-h-[90vh] overflow-y-auto index-scroll">
             <button
               onClick={() => setEditingTopic(null)}
-              className="absolute top-4 right-4 p-1.5 text-slate-400 hover:text-slate-600 rounded-lg transition-colors cursor-pointer"
+              className="absolute top-4 right-4 p-1.5 text-slate-400 hover:text-slate-600 rounded-lg transition-colors cursor-pointer z-10"
             >
               <X className="w-4.5 h-4.5" />
             </button>
@@ -2066,17 +2079,125 @@ export default function App() {
                 />
               </div>
 
-              <div className="flex gap-2 pt-2">
+              {/* 제출 대상 수정 UI 추가 */}
+              <div className="border-t border-slate-100 pt-4">
+                <span className="block text-xs font-semibold text-slate-500 mb-2">이수증 제출 대상 교직원 지정 (직종 클릭 시 해당 직종 전체선택)</span>
+                
+                {/* 직종별 일괄 토글 버튼 */}
+                <div className="flex flex-wrap gap-1.5 mb-2.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const ids = roster.filter(r => r.type === '교원').map(r => r.id);
+                      const hasAll = ids.every(id => editTargets.includes(id));
+                      if (hasAll) {
+                        setEditTargets(prev => prev.filter(id => !ids.includes(id)));
+                      } else {
+                        setEditTargets(prev => Array.from(new Set([...prev, ...ids])));
+                      }
+                    }}
+                    className={`px-2.5 py-1.5 rounded-lg text-[10px] font-bold border transition-all cursor-pointer ${
+                      roster.filter(r => r.type === '교원').map(r => r.id).every(id => editTargets.includes(id)) && roster.some(r => r.type === '교원')
+                        ? 'bg-blue-100 border-blue-200 text-blue-700'
+                        : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
+                    }`}
+                  >
+                    교원 전체
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const ids = roster.filter(r => r.type === '교육공무직').map(r => r.id);
+                      const hasAll = ids.every(id => editTargets.includes(id));
+                      if (hasAll) {
+                        setEditTargets(prev => prev.filter(id => !ids.includes(id)));
+                      } else {
+                        setEditTargets(prev => Array.from(new Set([...prev, ...ids])));
+                      }
+                    }}
+                    className={`px-2.5 py-1.5 rounded-lg text-[10px] font-bold border transition-all cursor-pointer ${
+                      roster.filter(r => r.type === '교육공무직').map(r => r.id).every(id => editTargets.includes(id)) && roster.some(r => r.type === '교육공무직')
+                        ? 'bg-purple-100 border-purple-200 text-purple-700'
+                        : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
+                    }`}
+                  >
+                    교육공무직 전체
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const ids = roster.filter(r => r.type === '일반직').map(r => r.id);
+                      const hasAll = ids.every(id => editTargets.includes(id));
+                      if (hasAll) {
+                        setEditTargets(prev => prev.filter(id => !ids.includes(id)));
+                      } else {
+                        setEditTargets(prev => Array.from(new Set([...prev, ...ids])));
+                      }
+                    }}
+                    className={`px-2.5 py-1.5 rounded-lg text-[10px] font-bold border transition-all cursor-pointer ${
+                      roster.filter(r => r.type === '일반직').map(r => r.id).every(id => editTargets.includes(id)) && roster.some(r => r.type === '일반직')
+                        ? 'bg-emerald-100 border-emerald-200 text-emerald-700'
+                        : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
+                    }`}
+                  >
+                    일반직 전체
+                  </button>
+                </div>
+
+                {/* 개별 교직원 리스트 */}
+                <div className="border border-slate-200 border-dashed rounded-xl max-h-[130px] overflow-y-auto p-2 bg-slate-50/50 space-y-1 index-scroll">
+                  {roster.map(r => (
+                    <label key={r.id} className="flex items-center gap-2 px-2 py-1 hover:bg-white rounded-lg transition-colors cursor-pointer text-[11px]">
+                      <input
+                        type="checkbox"
+                        checked={editTargets.includes(r.id)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setEditTargets(prev => [...prev, r.id]);
+                          } else {
+                            setEditTargets(prev => prev.filter(id => id !== r.id));
+                          }
+                        }}
+                        className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                      />
+                      <span className="font-bold text-slate-800 flex-1">{r.name}</span>
+                      <span className="text-[9.5px] text-slate-400 font-medium">{r.department || '미지정'}</span>
+                      <span className="text-[8.5px] bg-white border px-1 py-0.2 rounded text-slate-500 shrink-0 font-medium font-mono">
+                        {r.type}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+
+                <div className="flex justify-between items-center mt-2.5 text-[9.5px] text-slate-400 font-medium">
+                  <span>선택된 제출 대상: <strong className="text-indigo-600 font-bold">{editTargets.length}명</strong> / 전체 {roster.length}명</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (editTargets.length === roster.length) {
+                        setEditTargets([]);
+                      } else {
+                        setEditTargets(roster.map(r => r.id));
+                      }
+                    }}
+                    className="hover:text-indigo-600 font-semibold cursor-pointer underline underline-offset-2"
+                  >
+                    {editTargets.length === roster.length ? '전체 선택 해제' : '전체 선택'}
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex gap-2 pt-3 border-t border-slate-100">
                 <button
                   type="button"
                   onClick={() => setEditingTopic(null)}
-                  className="flex-1 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 font-semibold rounded-xl text-xs transition-all cursor-pointer"
+                  className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold rounded-xl text-xs transition-all cursor-pointer"
                 >
                   취소
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl text-xs transition-all shadow-sm cursor-pointer"
+                  className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs transition-all shadow-sm cursor-pointer"
                 >
                   수정 사항 저장
                 </button>
@@ -2741,6 +2862,7 @@ export default function App() {
                                     setEditContent(topic.content);
                                     setEditDeadline(formatDeadline(topic.deadline));
                                     setEditCreator(topic.creator || '');
+                                    setEditTargets(topic.targets || []);
                                   }}
                                   className="text-slate-300 hover:text-indigo-600 transition-colors p-1 cursor-pointer"
                                   title="수정"
@@ -3229,7 +3351,9 @@ export default function App() {
                                     : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
                                 }`}
                               >
-                                과정 I & II 동시 제출 (12h+13h)
+                                {matchedStaff?.type === '일반직' || matchedStaff?.type === '교육공무직'
+                                  ? '과정 I & II 동시 제출 (19H)'
+                                  : '과정 I & II 동시 제출 (12h+13h)'}
                               </button>
                               <button
                                 type="button"
@@ -3240,7 +3364,9 @@ export default function App() {
                                     : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
                                 }`}
                               >
-                                통합 과정 제출 (25H)
+                                {matchedStaff?.type === '일반직' || matchedStaff?.type === '교육공무직'
+                                  ? '통합 과정 제출 (19H)'
+                                  : '통합 과정 제출 (25H)'}
                               </button>
                             </div>
                           </div>
@@ -3644,10 +3770,34 @@ export default function App() {
                           </h4>
                           
                           <div className="space-y-2 max-h-[440px] overflow-y-auto pr-1">
-                            {topics.map(topic => {
-                              const sub = getSubmissionsForTopic(topic.id).find(s => s.name === matchedStaff.name);
-                              const isEligible = !topic.targets || topic.targets.includes(matchedStaff.id);
-                              const isSelected = selectedStaffTopicId === topic.id;
+                            {[...topics]
+                              .sort((a, b) => {
+                                const subA = getSubmissionsForTopic(a.id).find(s => s.name === matchedStaff.name);
+                                const subB = getSubmissionsForTopic(b.id).find(s => s.name === matchedStaff.name);
+                                const isEligibleA = !a.targets || a.targets.includes(matchedStaff.id);
+                                const isEligibleB = !b.targets || b.targets.includes(matchedStaff.id);
+
+                                // 1. 본인 대상 여부 (제출 가능한 연수가 위로, 대상 제외는 맨 밑으로)
+                                if (isEligibleA && !isEligibleB) return -1;
+                                if (!isEligibleA && isEligibleB) return 1;
+
+                                if (isEligibleA && isEligibleB) {
+                                  // 2. 미제출 상태 우선 (미제출이 상단, 제출 완료가 하단)
+                                  const submittedA = !!subA;
+                                  const submittedB = !!subB;
+                                  if (!submittedA && submittedB) return -1;
+                                  if (submittedA && !submittedB) return 1;
+                                }
+
+                                // 동일 상태인 경우, 최신 등록된 연수가 먼저 뜨도록 함
+                                const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+                                const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+                                return dateB - dateA;
+                              })
+                              .map(topic => {
+                                const sub = getSubmissionsForTopic(topic.id).find(s => s.name === matchedStaff.name);
+                                const isEligible = !topic.targets || topic.targets.includes(matchedStaff.id);
+                                const isSelected = selectedStaffTopicId === topic.id;
                               
                               return (
                                 <div

@@ -72,6 +72,8 @@ function doGet(e) {
           var targetSheet = ss.getSheetByName(sheetName);
           
           if (data[i][0] === "topic-statutory-combined" || targetSheet) {
+            var targetsStr = data[i][7] || "";
+            var targetsArr = targetsStr ? String(targetsStr).split(",").map(function(s) { return s.trim(); }) : [];
             topics.push({
               id: data[i][0],
               title: data[i][1],
@@ -79,7 +81,8 @@ function doGet(e) {
               deadline: data[i][3],
               sheetCreated: true,
               createdAt: data[i][5],
-              creator: data[i][6] || ""
+              creator: data[i][6] || "",
+              targets: targetsArr
             });
           }
         }
@@ -167,7 +170,8 @@ function doPost(e) {
         topic.deadline,
         "true", // sheetCreated
         topic.createdAt,
-        topic.creator || ""
+        topic.creator || "",
+        topic.targets ? topic.targets.join(",") : ""
       ]);
       
       // 연수별 시트 자동 추가 기능 ★★
@@ -205,11 +209,12 @@ function doPost(e) {
         topic.deadline,
         "true", // sheetCreated
         topic.createdAt,
-        topic.creator || ""
+        topic.creator || "",
+        topic.targets ? topic.targets.join(",") : ""
       ];
       if (updateIndex > -1) {
         var oldTitle = rows[updateIndex - 1][1];
-        sheet.getRange(updateIndex, 1, 1, 7).setValues([rowData]);
+        sheet.getRange(updateIndex, 1, 1, 8).setValues([rowData]);
         
         // 시트명 변경
         var oldSheetName = oldTitle.length > 25 ? oldTitle.substring(0, 25) + "..." : oldTitle;
@@ -434,7 +439,7 @@ function setupSheets(ss) {
   var sheetNames = ["교직원명렬", "연수목록", "전체제출현황"];
   var headers = [
     ["ID", "성명", "구분", "소속/부서"],
-    ["ID", "연수명", "상세내용", "마감기한", "시트생성여부", "등록일시", "담당자"],
+    ["ID", "연수명", "상세내용", "마감기한", "시트생성여부", "등록일시", "담당자", "제출대상"],
     ["ID", "연수ID", "성명", "구분", "이수번호", "이수일자", "이수시간", "제출방식", "파일명", "제출일시", "검증여부"]
   ];
   
