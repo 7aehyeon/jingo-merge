@@ -165,7 +165,8 @@ export default function App() {
   // Roster, Topics, Submissions management (persists locally & connects to Google Sheets)
   const [roster, setRoster] = useState<RosterItem[]>(() => {
     const saved = safeLocalStorage.getItem('jj_roster');
-    return saved ? JSON.parse(saved) : INITIAL_ROSTER;
+    const parsed = saved ? JSON.parse(saved) : INITIAL_ROSTER;
+    return parsed.map((r: any) => ({ ...r, id: String(r.id || '').trim() })).filter((r: any) => r.id !== '');
   });
   
   const [topics, setTopics] = useState<TrainingTopic[]>(() => {
@@ -184,7 +185,20 @@ export default function App() {
         }
       ];
     }
-    return loaded;
+    return loaded.map((t: any) => {
+      let targets: string[] = [];
+      if (Array.isArray(t.targets)) {
+        targets = t.targets.map((id: any) => String(id || '').trim()).filter((id: string) => id !== '' && id !== 'undefined' && id !== 'null');
+      } else if (typeof t.targets === 'string') {
+        targets = t.targets.split(',').map((id: string) => id.trim()).filter((id: string) => id !== '' && id !== 'undefined' && id !== 'null');
+      } else if (t.targets !== undefined && t.targets !== null) {
+        targets = [String(t.targets).trim()];
+      }
+      return {
+        ...t,
+        targets: targets.length > 0 ? targets : undefined
+      };
+    });
   });
 
   const [submissions, setSubmissions] = useState<Submission[]>(() => {
@@ -836,12 +850,32 @@ export default function App() {
       let updated = false;
 
       if (rosterJson.success && rosterJson.data && Array.isArray(rosterJson.data)) {
-        setRoster(rosterJson.data);
-        safeLocalStorage.setItem('jj_roster', JSON.stringify(rosterJson.data));
+        const normalizedRoster = rosterJson.data.map((r: any) => ({
+          ...r,
+          id: String(r.id || '').trim()
+        })).filter((r: any) => r.id !== '');
+        setRoster(normalizedRoster);
+        safeLocalStorage.setItem('jj_roster', JSON.stringify(normalizedRoster));
         updated = true;
       }
       if (topicsJson.success && topicsJson.data && Array.isArray(topicsJson.data)) {
-        let fetchedTopics = [...topicsJson.data];
+        let fetchedTopics = topicsJson.data.map((t: any) => {
+          let targets: string[] = [];
+          if (Array.isArray(t.targets)) {
+            targets = t.targets.map((id: any) => String(id || '').trim()).filter((id: string) => id !== '' && id !== 'undefined' && id !== 'null');
+          } else if (typeof t.targets === 'string') {
+            targets = t.targets.split(',')
+              .map((id: string) => id.trim())
+              .filter((id: string) => id !== '' && id !== 'undefined' && id !== 'null');
+          } else if (t.targets !== undefined && t.targets !== null) {
+            targets = [String(t.targets).trim()];
+          }
+          return {
+            ...t,
+            targets: targets.length > 0 ? targets : undefined
+          };
+        });
+
         if (!fetchedTopics.some((t: any) => t.id === 'topic-statutory-combined')) {
           fetchedTopics.push({
             id: 'topic-statutory-combined',
@@ -1135,7 +1169,7 @@ export default function App() {
       setUserLookedUp(true);
       
       // Pre-select the first valid topic for this staff member
-      const targets = topics.filter(t => !t.targets || t.targets.includes(found.id));
+      const targets = topics.filter(t => !t.targets || t.targets.length === 0 || t.targets.map(String).includes(String(found.id)));
       if (targets.length > 0) {
         setSelectedStaffTopicId(targets[0].id);
       }
@@ -1796,9 +1830,15 @@ export default function App() {
 
   // Global aggregate stats
   const activeTopic = topics.find(t => t.id === selectedTopicId) || topics[0];
-  const targetsForActiveTopic = activeTopic
-    ? roster.filter(r => !activeTopic.targets || activeTopic.targets.includes(r.id))
-    : roster;
+  const targetsForActiveTopic = useMemo(() => {
+    if (!activeTopic) return roster;
+    if (!activeTopic.targets || activeTopic.targets.length === 0) return roster;
+    
+    const validIds = activeTopic.targets.filter(id => id && id.trim() !== '' && roster.some(r => String(r.id) === String(id)));
+    if (validIds.length === 0) return roster;
+    
+    return roster.filter(r => validIds.includes(String(r.id)));
+  }, [activeTopic, roster]);
   const totalRosterCount = roster.length;
   const activeTargetCount = targetsForActiveTopic.length;
   const subsForActiveTopic = activeTopic ? getSubmissionsForTopic(activeTopic.id) : [];
@@ -2862,7 +2902,7 @@ export default function App() {
                                     setEditContent(topic.content);
                                     setEditDeadline(formatDeadline(topic.deadline));
                                     setEditCreator(topic.creator || '');
-                                    setEditTargets(topic.targets || []);
+                                    setEditTargets(topic.targets && topic.targets.length > 0 ? topic.targets : roster.map(r => r.id));
                                   }}
                                   className="text-slate-300 hover:text-indigo-600 transition-colors p-1 cursor-pointer"
                                   title="수정"
@@ -3766,7 +3806,7 @@ export default function App() {
 
                         <div className="space-y-2.5">
                           <h4 className="text-xs font-extrabold text-slate-700">
-                            본인 대상 이수증 취합 게시물 현황 ({topics.filter(t => !t.targets || t.targets.includes(matchedStaff.id)).length}개 과정)
+                            본인 대상 이수증 취합 게시물 현황 ({topics.filter(t => !t.targets || t.targets.length === 0 || t.targets.map(String).includes(String(matchedStaff.id))).length}개 과정)
                           </h4>
                           
                           <div className="space-y-2 max-h-[440px] overflow-y-auto pr-1">
@@ -3774,8 +3814,8 @@ export default function App() {
                               .sort((a, b) => {
                                 const subA = getSubmissionsForTopic(a.id).find(s => s.name === matchedStaff.name);
                                 const subB = getSubmissionsForTopic(b.id).find(s => s.name === matchedStaff.name);
-                                const isEligibleA = !a.targets || a.targets.includes(matchedStaff.id);
-                                const isEligibleB = !b.targets || b.targets.includes(matchedStaff.id);
+                                const isEligibleA = !a.targets || a.targets.length === 0 || a.targets.map(String).includes(String(matchedStaff.id));
+                                const isEligibleB = !b.targets || b.targets.length === 0 || b.targets.map(String).includes(String(matchedStaff.id));
 
                                 // 1. 본인 대상 여부 (제출 가능한 연수가 위로, 대상 제외는 맨 밑으로)
                                 if (isEligibleA && !isEligibleB) return -1;
@@ -3796,7 +3836,7 @@ export default function App() {
                               })
                               .map(topic => {
                                 const sub = getSubmissionsForTopic(topic.id).find(s => s.name === matchedStaff.name);
-                                const isEligible = !topic.targets || topic.targets.includes(matchedStaff.id);
+                                const isEligible = !topic.targets || topic.targets.length === 0 || topic.targets.map(String).includes(String(matchedStaff.id));
                                 const isSelected = selectedStaffTopicId === topic.id;
                               
                               return (
@@ -3933,7 +3973,7 @@ export default function App() {
                 {/* Grid for small summary stats per course */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {topics.map(topic => {
-                    const eligibleRoster = roster.filter(r => !topic.targets || topic.targets.includes(r.id));
+                    const eligibleRoster = roster.filter(r => !topic.targets || topic.targets.length === 0 || topic.targets.map(String).includes(String(r.id)));
                     const totalCount = eligibleRoster.length;
                     const topicSubmissions = getSubmissionsForTopic(topic.id);
                     const subbedCount = topicSubmissions.length;
