@@ -690,6 +690,17 @@ export default function App() {
       // 브라우저 탭이 활성화 상태일 때만 불필요한 트래픽 낭비 방지를 위해 동기화 수행
       if (document.hidden) return;
       
+      // 사용자가 이수증 제출을 위해 교직원명을 조회하여 수료증을 제출 중이거나,
+      // AI가 분석 중일 때, 혹은 관리자가 연수를 새로 개설/수정 중일 때는 
+      // 입력 도중 데이터가 초기화되거나 새로고침되는 현상을 완벽히 방지하기 위해 
+      // 백그라운드 자동 연동(autoSync)을 일시 대기합니다.
+      const isUserFormActive = matchedStaff !== null || isAnalyzing || isAnalyzingI || isAnalyzingII;
+      const isAdminEditing = editingTopic !== null;
+      if (isUserFormActive || isAdminEditing || isSyncing) {
+        console.log('교직원이 이수증을 입력 중이거나 관리자가 편집 중이므로 백그라운드 자동 동기화를 일시 보류합니다.');
+        return;
+      }
+      
       try {
         await pullDataFromGoogleSheets(true);
       } catch (e) {
@@ -713,22 +724,25 @@ export default function App() {
       window.removeEventListener('focus', handleFocus);
       document.removeEventListener('visibilitychange', handleFocus);
     };
-  }, [appsScriptUrl]);
+  }, [appsScriptUrl, matchedStaff, isAnalyzing, isAnalyzingI, isAnalyzingII, editingTopic, isSyncing]);
 
-  // Set default search staff topic once topics load
+  // Set default search staff topic once topics load (only if not already set or invalid)
   useEffect(() => {
     if (topics.length > 0) {
-      const hasStatutory = topics.some(t => t.id === 'topic-statutory-combined');
-      setSelectedStaffTopicId(hasStatutory ? 'topic-statutory-combined' : topics[0].id);
+      const currentExists = topics.some(t => t.id === selectedStaffTopicId);
+      if (!selectedStaffTopicId || !currentExists) {
+        const hasStatutory = topics.some(t => t.id === 'topic-statutory-combined');
+        setSelectedStaffTopicId(hasStatutory ? 'topic-statutory-combined' : topics[0].id);
+      }
     }
-  }, [topics]);
+  }, [topics, selectedStaffTopicId]);
 
-  // Set default selected targets to all roster members on load/roster change
+  // Set default selected targets to all roster members on load/roster change (only when none are selected)
   useEffect(() => {
-    if (roster.length > 0) {
+    if (roster.length > 0 && selectedTargetIds.length === 0) {
       setSelectedTargetIds(roster.map(r => r.id));
     }
-  }, [roster]);
+  }, [roster, selectedTargetIds.length]);
 
   // CSV Parsing and Upload Helpers
   const handleCsvUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
