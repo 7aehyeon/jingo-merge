@@ -96,9 +96,33 @@ function doGet(e) {
         if (data[i][0]) {
           var rawHours = data[i][6];
           var hoursVal = 0;
-          // 이수시간 컬럼에 연-월-일(날짜)이 들어가 있는 경우 문자열로 유지
-          if (typeof rawHours === "string" && rawHours.indexOf("-") > -1) {
+          
+          if (rawHours instanceof Date) {
+            // 구글 시트가 날짜 형식으로 자동 변환한 경우 YYYY-MM-DD 형태로 포맷팅
+            var yyyy = rawHours.getFullYear();
+            var mm = String(rawHours.getMonth() + 1);
+            if (mm.length < 2) mm = '0' + mm;
+            var dd = String(rawHours.getDate());
+            if (dd.length < 2) dd = '0' + dd;
+            hoursVal = yyyy + '-' + mm + '-' + dd;
+          } else if (typeof rawHours === "string" && rawHours.indexOf("-") > -1) {
             hoursVal = rawHours;
+          } else if (rawHours && typeof rawHours === "object") {
+            try {
+              var d = new Date(rawHours);
+              if (!isNaN(d.getTime())) {
+                var yyyy = d.getFullYear();
+                var mm = String(d.getMonth() + 1);
+                if (mm.length < 2) mm = '0' + mm;
+                var dd = String(d.getDate());
+                if (dd.length < 2) dd = '0' + dd;
+                hoursVal = yyyy + '-' + mm + '-' + dd;
+              } else {
+                hoursVal = String(rawHours);
+              }
+            } catch (e) {
+              hoursVal = String(rawHours);
+            }
           } else {
             hoursVal = Number(rawHours || 0);
           }

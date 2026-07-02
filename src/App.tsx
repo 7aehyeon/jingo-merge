@@ -123,10 +123,22 @@ const INITIAL_SUBMISSIONS: Submission[] = [
   }
 ];
 
+// 법정의무연수 등의 제출 건이 구글 시트 수동 편지 및 중복 누적으로 인해 여러 개 생성된 경우,
+// 가장 최신(배열의 가장 뒤쪽)의 한 건만 남기고 중복을 말끔하게 정제해 주는 핵심 헬퍼 함수
+const filterUniqueSubmissions = (subs: Submission[]): Submission[] => {
+  const map = new Map<string, Submission>();
+  subs.forEach(s => {
+    // topicId와 name을 결합하여 고유 키로 매핑하며, 뒤쪽에 등장하는(최신) 데이터가 자연스럽게 앞의 것을 덮어씁니다.
+    const key = `${s.topicId}_${s.name}`;
+    map.set(key, s);
+  });
+  return Array.from(map.values());
+};
+
 // [초중요 - 배포 설정] 깃허브(GitHub Pages)에 정적 페이지로 배포 시, 모든 사용자의 브라우저에서 자동 연동이 되도록 
 // 본인의 구글 Apps Script 웹앱 URL(https://script.google.com/macros/s/.../exec) 주소를 아래 빈칸에 직접 붙여넣고 저장하세요.
 // 여기에 URL을 적어두면, 사용자가 사이트에 처음 접속할 때 따로 라이브러리 설정을 누르고 연동할 필요 없이 모든 데이터가 이 구글 시트로 들어가게 됩니다!
-const DEFAULT_APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbz1CefXw9n4V_c0E0GRFrRkE0A0RdcdY-mOmK6vXLTIo9Lpy6Qx0yQbGkWPndd1CC29/exec";
+const DEFAULT_APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyIdvQZjehDMIO-9Pltxon_0K6sCHXm8uGUPTSTvKpl5iFlvN-tbCDQmNSvdAizodi5/exec";
 
 // 브라우저 쿠키/저장소 차단(시크릿 모드/아이프레임 제한 등) 발생 시 크래시 방지를 위한 안전한 로컬스토리지 래퍼
 const inMemoryStorage: Record<string, string> = {};
@@ -201,10 +213,45 @@ export default function App() {
     });
   });
 
-  const [submissions, setSubmissions] = useState<Submission[]>(() => {
+  const [submissions, setSubmissionsState] = useState<Submission[]>(() => {
     const saved = safeLocalStorage.getItem('jj_submissions');
-    return saved ? JSON.parse(saved) : INITIAL_SUBMISSIONS;
+    const loaded = saved ? JSON.parse(saved) : INITIAL_SUBMISSIONS;
+    const normalized = loaded.map((s: any) => {
+      let normHours = s.hours;
+      if (typeof normHours === 'string') {
+        if (normHours.includes('T') && normHours.includes('-')) {
+          normHours = normHours.substring(0, 10);
+        } else if (normHours.includes('-')) {
+          normHours = normHours.trim().substring(0, 10);
+        } else if (!isNaN(Number(normHours)) && normHours.trim() !== '') {
+          normHours = Number(normHours);
+        }
+      } else if (normHours && typeof normHours === 'object') {
+        try {
+          const d = new Date(normHours);
+          if (!isNaN(d.getTime())) {
+            const yyyy = d.getFullYear();
+            const mm = String(d.getMonth() + 1).padStart(2, '0');
+            const dd = String(d.getDate()).padStart(2, '0');
+            normHours = `${yyyy}-${mm}-${dd}`;
+          }
+        } catch (e) {
+          // ignore
+        }
+      }
+      return { ...s, hours: normHours };
+    });
+    return filterUniqueSubmissions(normalized);
   });
+
+  const setSubmissions = (val: Submission[] | ((prev: Submission[]) => Submission[])) => {
+    setSubmissionsState(prev => {
+      const next = typeof val === 'function' ? (val as Function)(prev) : val;
+      const unique = filterUniqueSubmissions(next);
+      safeLocalStorage.setItem('jj_submissions', JSON.stringify(unique));
+      return unique;
+    });
+  };
 
   const [appsScriptUrl, setAppsScriptUrl] = useState<string>(() => {
     // 만약 소스코드 내 DEFAULT_APPS_SCRIPT_URL이 변경되었다면, 이전 로컬스토리지의 구버전 주소를 덮어씌웁니다.
@@ -285,10 +332,33 @@ export default function App() {
   // Format deadline string to YYYY-MM-DD cleanly
   const formatDeadline = (deadlineStr: string) => {
     if (!deadlineStr) return '';
-    // If it contains T, split by T
+    
+    // 구글 시트에서 날짜 데이터를 전송할 때 UTC 기준 ISO 8601 포맷(예: 2026-12-27T15:00:00.000Z)으로 변환되어,
+    // 한국 시간(KST, UTC+9)보다 9시간 느리게 수신되는 현상(하루 당겨짐)을 해결하기 위해 KST(Asia/Seoul) 시간대로 보정합니다.
     if (deadlineStr.includes('T')) {
+      try {
+        const d = new Date(deadlineStr);
+        if (!isNaN(d.getTime())) {
+          const formatter = new Intl.DateTimeFormat('en-US', {
+            timeZone: 'Asia/Seoul',
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit'
+          });
+          const parts = formatter.formatToParts(d);
+          const year = parts.find(p => p.type === 'year')?.value || '';
+          const month = parts.find(p => p.type === 'month')?.value || '';
+          const day = parts.find(p => p.type === 'day')?.value || '';
+          if (year && month && day) {
+            return `${year}-${month}-${day}`;
+          }
+        }
+      } catch (e) {
+        console.error('Timezone formatting error in formatDeadline:', e);
+      }
       return deadlineStr.split('T')[0];
     }
+    
     // If it contains a space, split by space
     if (deadlineStr.includes(' ')) {
       return deadlineStr.split(' ')[0];
@@ -430,7 +500,11 @@ export default function App() {
     const isStatutory = selectedTopic.id === 'topic-statutory-combined' || (title.includes('법정의무연수') && title.includes('꾸러미'));
 
     if (isStatutory) {
-      if (statutoryCourseMode === 'none') {
+      const isGeneralOrGov = matchedStaff?.type === '일반직' || matchedStaff?.type === '교육공무직';
+      
+      if (isGeneralOrGov) {
+        setStatutoryCourseMode('combined');
+      } else if (statutoryCourseMode === 'none' || statutoryCourseMode === 'combined') {
         setStatutoryCourseMode('I');
       }
 
@@ -439,47 +513,59 @@ export default function App() {
         : null;
 
       if (prevSub) {
-        // Parse existing cert values
-        if (prevSub.certNumber.includes('/')) {
-          const partsNum = prevSub.certNumber.split('/');
-          const part1 = partsNum[0]?.trim() || '';
-          const part2 = partsNum[1]?.trim() || '';
-          setCertNumberI(part1 === '-' ? '' : part1);
-          setCertNumberII(part2 === '-' ? '' : part2);
-          setCertNumber('');
+        if (isGeneralOrGov) {
+          // 일반직/교육공무직인 경우 통합 단일 과정으로 처리
+          setCertNumber(prevSub.certNumber);
+          setCertDate(prevSub.certDate);
+          setCertNumberI('');
+          setCertNumberII('');
+          setCertDateI('');
+          setCertDateII('');
         } else {
-          if (prevSub.hours === 34) {
-            setCertNumber(prevSub.certNumber);
-            setStatutoryCourseMode('combined');
-            setCertNumberI('');
-            setCertNumberII('');
-          } else {
-            setCertNumberI(prevSub.certNumber.trim());
-            setCertNumberII('');
+          // 교원 등인 경우 (과정 I/II 구분 및 통합 구분)
+          if (prevSub.certNumber.includes('/')) {
+            const partsNum = prevSub.certNumber.split('/');
+            const part1 = partsNum[0]?.trim() || '';
+            const part2 = partsNum[1]?.trim() || '';
+            setCertNumberI(part1 === '-' ? '' : part1);
+            setCertNumberII(part2 === '-' ? '' : part2);
             setCertNumber('');
-          }
-        }
-
-        if (prevSub.certDate.includes('/')) {
-          const partsDt = prevSub.certDate.split('/');
-          const part1 = partsDt[0]?.trim() || '';
-          const part2 = partsDt[1]?.trim() || '';
-          setCertDateI(part1 === '-' ? '' : part1);
-          setCertDateII(part2 === '-' ? '' : part2);
-          setCertDate('');
-        } else {
-          if (prevSub.hours === 34) {
-            setCertDate(prevSub.certDate);
-            setStatutoryCourseMode('combined');
-            setCertDateI('');
-            setCertDateII('');
           } else {
-            setCertDateI(prevSub.certDate);
-            setCertDateII('');
+            if (prevSub.hours === 34) {
+              setCertNumber(prevSub.certNumber);
+              setStatutoryCourseMode('combined');
+              setCertNumberI('');
+              setCertNumberII('');
+            } else {
+              setCertNumberI(prevSub.certNumber.trim());
+              setCertNumberII('');
+              setCertNumber('');
+            }
+          }
+
+          if (prevSub.certDate.includes('/')) {
+            const partsDt = prevSub.certDate.split('/');
+            const part1 = partsDt[0]?.trim() || '';
+            const part2 = partsDt[1]?.trim() || '';
+            setCertDateI(part1 === '-' ? '' : part1);
+            setCertDateII(part2 === '-' ? '' : part2);
             setCertDate('');
+          } else {
+            if (prevSub.hours === 34) {
+              setCertDate(prevSub.certDate);
+              setStatutoryCourseMode('combined');
+              setCertDateI('');
+              setCertDateII('');
+            } else {
+              setCertDateI(prevSub.certDate);
+              setCertDateII('');
+              setCertDate('');
+            }
           }
         }
-        setHours(prevSub.hours || 15);
+        
+        const defaultTotalH = isGeneralOrGov ? 19 : 25;
+        setHours(prevSub.hours || defaultTotalH);
         setAnalysisSuccessMsg('이전에 제출하신 이수증 정보가 연동되었습니다. 필요한 경우 수정 후 다시 등록을 완료하십시오.');
       } else {
         // No previous submission: RESET all inputs for this staff member!
@@ -489,7 +575,9 @@ export default function App() {
         setCertDateII('');
         setCertNumber('');
         setCertDate('');
-        setHours(15);
+        
+        const defaultTotalH = isGeneralOrGov ? 19 : 25;
+        setHours(defaultTotalH);
         setAnalysisSuccessMsg('');
         setPdfFile(null);
         setPdfBase64('');
@@ -590,6 +678,41 @@ export default function App() {
     };
     
     initSync();
+  }, [appsScriptUrl]);
+
+  // [실시간 무감각 자동 연동 엔진]
+  // 사용자가 수동 새로고침 버튼을 누르지 않아도, 30초 주기 또는 브라우저 탭 활성화 시 
+  // 백그라운드에서 조용하게(silent=true) 최신 데이터를 동기화하여 완벽한 실시간 상태를 유지합니다.
+  useEffect(() => {
+    if (!appsScriptUrl) return;
+
+    const autoSync = async () => {
+      // 브라우저 탭이 활성화 상태일 때만 불필요한 트래픽 낭비 방지를 위해 동기화 수행
+      if (document.hidden) return;
+      
+      try {
+        await pullDataFromGoogleSheets(true);
+      } catch (e) {
+        console.error('실시간 백그라운드 동기화 실패:', e);
+      }
+    };
+
+    // 1. 30초 단위 주기적 백그라운드 연동 타이머 설정
+    const timer = setInterval(autoSync, 30000);
+
+    // 2. 다른 작업을 하다가 브라우저 탭(창)을 다시 포커스하는 순간 즉각 실시간 동기화
+    const handleFocus = () => {
+      autoSync();
+    };
+
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleFocus);
+
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleFocus);
+    };
   }, [appsScriptUrl]);
 
   // Set default search staff topic once topics load
@@ -891,8 +1014,33 @@ export default function App() {
         updated = true;
       }
       if (subsJson.success && subsJson.data && Array.isArray(subsJson.data)) {
-        setSubmissions(subsJson.data);
-        safeLocalStorage.setItem('jj_submissions', JSON.stringify(subsJson.data));
+        const normalizedSubs = subsJson.data.map((s: any) => {
+          let normHours = s.hours;
+          if (typeof normHours === 'string') {
+            if (normHours.includes('T') && normHours.includes('-')) {
+              normHours = normHours.substring(0, 10);
+            } else if (normHours.includes('-')) {
+              normHours = normHours.trim().substring(0, 10);
+            } else if (!isNaN(Number(normHours)) && normHours.trim() !== '') {
+              normHours = Number(normHours);
+            }
+          } else if (normHours && typeof normHours === 'object') {
+            try {
+              const d = new Date(normHours);
+              if (!isNaN(d.getTime())) {
+                const yyyy = d.getFullYear();
+                const mm = String(d.getMonth() + 1).padStart(2, '0');
+                const dd = String(d.getDate()).padStart(2, '0');
+                normHours = `${yyyy}-${mm}-${dd}`;
+              }
+            } catch (e) {
+              // ignore
+            }
+          }
+          return { ...s, hours: normHours };
+        });
+        setSubmissions(normalizedSubs);
+        safeLocalStorage.setItem('jj_submissions', JSON.stringify(normalizedSubs));
         updated = true;
       }
 
@@ -1449,7 +1597,28 @@ export default function App() {
     let target = dateStr.trim();
     
     // ISO 8601 형식 (e.g. 2026-06-17T15:00:00.000Z) 처리
+    // 구글 시트에서 날짜 데이터를 전송할 때 UTC 기준 ISO 8601 포맷으로 변환되어 하루 전날로 뜨는 현상을 KST(Asia/Seoul) 시간대로 보정하여 원천 해결합니다.
     if (target.includes('T')) {
+      try {
+        const d = new Date(target);
+        if (!isNaN(d.getTime())) {
+          const formatter = new Intl.DateTimeFormat('en-US', {
+            timeZone: 'Asia/Seoul',
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit'
+          });
+          const parts = formatter.formatToParts(d);
+          const year = parts.find(p => p.type === 'year')?.value || '';
+          const month = parts.find(p => p.type === 'month')?.value || '';
+          const day = parts.find(p => p.type === 'day')?.value || '';
+          if (year && month && day) {
+            return `${year}-${month}-${day}`;
+          }
+        }
+      } catch (e) {
+        console.error('Timezone formatting error in formatDateToYYYYMMDD:', e);
+      }
       const onlyDate = target.split('T')[0];
       if (/^\d{4}-\d{2}-\d{2}$/.test(onlyDate)) {
         return onlyDate;
@@ -1757,6 +1926,10 @@ export default function App() {
       } finally {
         setIsSyncing(false);
         setLoadingMessage('');
+        // 전송 완료 후 원격 시트 최신 데이터를 1.5초 딜레이 후 백그라운드 동기화하여 데이터의 정확성과 일관성을 맞춥니다.
+        setTimeout(async () => {
+          await pullDataFromGoogleSheets(true);
+        }, 1500);
       }
     }
 
@@ -2647,7 +2820,27 @@ export default function App() {
                                     {sub ? sub.certNumber : '-'}
                                   </td>
                                   <td className="p-3">
-                                    {sub ? <span className="font-bold text-slate-800">{typeof sub.hours === 'string' && sub.hours.includes('-') ? sub.hours : `${sub.hours}시간`}</span> : '-'}
+                                    {sub ? (
+                                      <span className="font-bold text-slate-800">
+                                        {(() => {
+                                          if (activeTopic?.id === 'topic-statutory-combined') {
+                                            const isGeneralOrGov = member.type === '일반직' || member.type === '교육공무직';
+                                            const totalH = isGeneralOrGov ? 19 : 25;
+                                            
+                                            // 날짜형태(YYYY-MM-DD) 일 경우 그대로 표시
+                                            if (typeof sub.hours === 'string' && sub.hours.includes('-')) {
+                                              return sub.hours;
+                                            }
+                                            
+                                            // 통합 이수 또는 19/25/30 일 경우 직종 맞춤 자동 표시
+                                            if (sub.hours === 19 || sub.hours === 25 || sub.hours === 30 || sub.hours === totalH) {
+                                              return `${totalH}시간`;
+                                            }
+                                          }
+                                          return typeof sub.hours === 'string' && sub.hours.includes('-') ? sub.hours : `${sub.hours}시간`;
+                                        })()}
+                                      </span>
+                                    ) : '-'}
                                   </td>
                                 </tr>
                               );
@@ -3362,33 +3555,42 @@ export default function App() {
                             <div className="grid grid-cols-2 gap-1.5">
                               <button
                                 type="button"
+                                disabled={matchedStaff?.type === '일반직' || matchedStaff?.type === '교육공무직'}
                                 onClick={() => setStatutoryCourseMode('I')}
-                                className={`px-2 py-1.5 border rounded-lg text-[10.5px] font-bold transition-all cursor-pointer text-center ${
-                                  statutoryCourseMode === 'I'
-                                    ? 'bg-indigo-600 border-indigo-700 text-white shadow-2xs'
-                                    : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                                className={`px-2 py-1.5 border rounded-lg text-[10.5px] font-bold transition-all text-center ${
+                                  matchedStaff?.type === '일반직' || matchedStaff?.type === '교육공무직'
+                                    ? 'bg-slate-100 border-slate-200 text-slate-300 cursor-not-allowed opacity-60'
+                                    : statutoryCourseMode === 'I'
+                                    ? 'bg-indigo-600 border-indigo-700 text-white shadow-2xs cursor-pointer'
+                                    : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50 cursor-pointer'
                                 }`}
                               >
                                 과정 I 제출 (12H)
                               </button>
                               <button
                                 type="button"
+                                disabled={matchedStaff?.type === '일반직' || matchedStaff?.type === '교육공무직'}
                                 onClick={() => setStatutoryCourseMode('II')}
-                                className={`px-2 py-1.5 border rounded-lg text-[10.5px] font-bold transition-all cursor-pointer text-center ${
-                                  statutoryCourseMode === 'II'
-                                    ? 'bg-indigo-600 border-indigo-700 text-white shadow-2xs'
-                                    : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                                className={`px-2 py-1.5 border rounded-lg text-[10.5px] font-bold transition-all text-center ${
+                                  matchedStaff?.type === '일반직' || matchedStaff?.type === '교육공무직'
+                                    ? 'bg-slate-100 border-slate-200 text-slate-300 cursor-not-allowed opacity-60'
+                                    : statutoryCourseMode === 'II'
+                                    ? 'bg-indigo-600 border-indigo-700 text-white shadow-2xs cursor-pointer'
+                                    : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50 cursor-pointer'
                                 }`}
                               >
                                 과정 II 제출 (13H)
                               </button>
                               <button
                                 type="button"
+                                disabled={matchedStaff?.type === '일반직' || matchedStaff?.type === '교육공무직'}
                                 onClick={() => setStatutoryCourseMode('both')}
-                                className={`px-2 py-1.5 border rounded-lg text-[10.5px] font-bold transition-all cursor-pointer text-center ${
-                                  statutoryCourseMode === 'both'
-                                    ? 'bg-indigo-600 border-indigo-700 text-white shadow-2xs'
-                                    : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                                className={`px-2 py-1.5 border rounded-lg text-[10.5px] font-bold transition-all text-center ${
+                                  matchedStaff?.type === '일반직' || matchedStaff?.type === '교육공무직'
+                                    ? 'bg-slate-100 border-slate-200 text-slate-300 cursor-not-allowed opacity-60'
+                                    : statutoryCourseMode === 'both'
+                                    ? 'bg-indigo-600 border-indigo-700 text-white shadow-2xs cursor-pointer'
+                                    : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50 cursor-pointer'
                                 }`}
                               >
                                 {matchedStaff?.type === '일반직' || matchedStaff?.type === '교육공무직'
@@ -3409,6 +3611,11 @@ export default function App() {
                                   : '통합 과정 제출 (25H)'}
                               </button>
                             </div>
+                            {(matchedStaff?.type === '일반직' || matchedStaff?.type === '교육공무직') && (
+                              <p className="text-[9.5px] text-indigo-600/90 font-medium leading-normal bg-indigo-50/50 p-2 rounded-lg border border-indigo-100/30 animate-in fade-in">
+                                💡 <strong>일반직 및 교육공무직</strong> 유형은 별도의 과정 I, II 과정 구분이 존재하지 않으므로 <strong>'통합 과정 제출'만 활성화</strong>됩니다.
+                              </p>
+                            )}
                           </div>
 
                           <div className="flex items-center justify-between gap-2 pt-1 border-t border-indigo-100/60">
